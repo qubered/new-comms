@@ -39,7 +39,7 @@ if (!show) {
   setTimeout(() => {
     console.log(`\n  Talk (phones):  https://${ip}:5173   (accept the certificate warning once)`);
     console.log(`  Manager:        https://${ip}:5174`);
-    console.log(`  Gateway:        http://${ip}:8080/api/v1/health\n`);
+    console.log(`  Gateway:        http://${ip}:8080/api/v2/health\n`);
   }, 2500);
 }
 

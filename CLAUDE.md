@@ -18,7 +18,8 @@ the user says otherwise. Full statement: spec, "Product direction".
 - `docs/design/mockups/manager-v2.html` is the visual reference for the Manager. `talk.html` is the
   reference for the phone app.
 - The v1 spec, plan and `matrix.html` mockup are history. The v1 code is tagged `v1-channels`.
-- `README.md` describes how to run things. It is v1 until phase 6 rewrites it.
+- `README.md` describes how to run v2. `docs/research/2026-09-29-v2-verification.md` records
+  software verification and the outstanding physical-device acceptance tests.
 
 ```
 apps/talk/           phone client (React PWA)
@@ -34,7 +35,7 @@ packages/protocol/   protocol.schema.json (the authority), generated TS types, s
 ```bash
 npm run dev          # mix-router + gateway + Talk + Manager, hot reload, HTTPS for phones
 npm run seed         # demo show into an empty gateway
-npm test             # gateway tests + cargo tests
+npm test             # Talk, protocol, gateway and Rust tests
 npm run smoke        # real mix-router, real WebRTC clients over loopback
 npm run typecheck    # also fails if packages/protocol/src/generated.ts is stale
 npm run generate -w @comms/protocol   # regenerate types after editing the schema

@@ -17,7 +17,7 @@ const dataFile = process.env.COMMS_DATA ?? resolve(root, "data/state.json");
 const routerAddress = process.env.MIX_ROUTER_ADDR ?? "127.0.0.1:7100";
 
 const router = new MixRouter(routerAddress);
-const gateway = new Gateway(new Store(dataFile), router, process.env.COMMS_NAME ?? "Comms");
+const gateway = new Gateway(new Store(dataFile), router, process.env.COMMS_NAME);
 const options = { mediaIp: process.env.COMMS_MEDIA_IP, logger: { level: "warn" } };
 
 /** Serves the built apps when they exist: Talk at /, Manager at /manager/. */

@@ -207,10 +207,11 @@ Every 10 ms mix-router:
    applied). Runs Vox detection on each.
 2. Resolves gates: `always`; `key` from data-channel state; `vox` from step 1; then
    `onCall` from the routes already open (one pass, no chaining).
-3. Conferences: sum of open incoming crosspoints × level.
+3. Resolve parallel crosspoints for each source/destination to the highest active gain;
+   do not add the same source twice. Conferences sum distinct incoming sources × gain.
 4. IFBs: program (its `program` port's out) dimmed by `dim` while any interrupt into it
    is open, plus the open interrupts.
-5. Stations and outputs: sum of open incoming crosspoints × level × (operator volume for
+5. Stations and outputs: sum of distinct open incoming sources × effective gain × (operator volume for
    stations) with N-1 for conference sources; then master volume or output trim; soft clip.
    Group destinations were expanded at config time.
 
@@ -273,3 +274,33 @@ node ports with Always functions. Key volumes → operator volumes; trims carrie
 Multi-site trunking, GPIO and logic, call signalling and beeps, dim panel speaker,
 dim XP level as a standalone function, audiopatch, clone output, recording, accounts,
 remote access, conference-of-conferences, dual-function keys, per-talker trim.
+
+## 11. Implementation decisions (29 September 2026)
+
+The gateway owns expansion; Manager reads the derived matrix. Talk receives the full
+snapshot. Vox uses a 10 ms RMS window with defaults of 20 ms attack and 600 ms hang.
+On-call gates resolve in one pass without recursively propagating calls. All in-use
+hardware tracks stay active. The router mixes every 5 ms but retains 10 ms downstream
+Opus pending the plan's real-phone comparison.
+
+An empty conference is reported under Needs attention rather than blocking creation,
+so operators can create it before adding members. Conference program sources for IFB
+are supported as in the Manager reference mockup; arbitrary bus chains remain invalid.
+The matrix opens each crosspoint's owning function for edits rather than storing a
+second independent routing configuration.
+
+Audit follow-up, approved by the request to fix all remaining points: parallel routes
+between a source and destination contribute once at the highest open gain, after IFB
+program dim is applied. This also covers conference contributions and dynamic Reply.
+Individual function ownership and gates remain intact for editing and call signalling.
+Physical station/input routes require a connected source session; disconnection
+releases Always calls and IFB interrupts. Connected silence still obeys Always; Vox
+is the signal-dependent trigger. Virtual conference/IFB sources require no session.
+
+Manager retains unsaved port and node drafts across internal navigation and live
+configuration updates, and warns before page unload. Pending saves remain locked
+across editor remounts, failed saves retain drafts, and stale responses cannot clear
+newer drafts. Drafts whose saved port/node is deleted remain viewable for recovery.
+
+See the [verification record](../../research/2026-09-29-v2-verification.md) for measured
+software results and physical-device acceptance still outstanding.

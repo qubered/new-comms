@@ -11,12 +11,14 @@
   "scripts": {
     "generate": "node scripts/generate.mjs",
     "generate:check": "node scripts/generate.mjs --check",
-    "typecheck": "npm run generate:check && tsc --noEmit -p tsconfig.json"
+    "typecheck": "npm run generate:check && tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
   },
   "peerDependencies": {
     "react": "^19.0.0"
   },
   "devDependencies": {
-    "json-schema-to-typescript": "^15.0.4"
+    "json-schema-to-typescript": "^15.0.4",
+    "vitest": "^3.2.0"
   }
 }

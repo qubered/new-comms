@@ -1,164 +1,116 @@
 # new-comms
 
-Web-based party-line / PGM intercom for a single site over local WiFi.
-Spec: `docs/superpowers/specs/2026-09-29-new-comms-design.md`. Plan: `docs/superpowers/plans/2026-09-29-new-comms-rough-plan.md`. Mockups: `docs/design/mockups/`.
+Comms anyone can run on devices they already own. Open Talk on phones and laptops, choose a station, and talk over ordinary local WiFi. One computer runs the show; no accounts, PTP or managed switches are required. Audio interfaces are optional bridges.
 
-```
-apps/talk/           phone client (React PWA)
-apps/manager/        admin app (React)
-services/gateway/    Node/Fastify: state, REST, SSE, WHEP signalling; drives mix-router over a local TCP control link
-crates/mix-router/   Rust: str0m WebRTC termination, per-pack N-1 mixing, data-channel control
-crates/comms-node/   Rust: bridges one channel of an audio interface into the system
-packages/protocol/   protocol.schema.json (the authority), generated TS types, SSE delta logic, useServerState hook
-```
+The [v2 spec](docs/superpowers/specs/2026-09-29-new-comms-matrix-design.md) and [rebuild plan](docs/superpowers/plans/2026-09-29-new-comms-matrix-rebuild-plan.md) describe the port model. The old channel-based application is preserved at the `v1-channels` tag.
 
-## Try it
+## Start a show
 
-Needs Node 22+, Rust (see `rust-toolchain.toml`), and libopus (`brew install opus`).
+Install Node 22+, the Rust toolchain in `rust-toolchain.toml`, and libopus (`brew install opus` on macOS). Linux audio nodes also need the ALSA development libraries.
 
 ```bash
 npm install
-npm run dev          # builds mix-router, then gateway + Talk + Manager with hot reload
-npm run seed         # once, in a second terminal: a small demo show
+npm run dev
+# In another terminal, seed an empty show:
+npm run seed
 ```
 
-`npm run dev` starts `mix-router`, the gateway and both apps as separate processes and prints the addresses. Open **Talk** on phones and **Manager** on a laptop.
-The apps run over HTTPS with a self-signed certificate because browsers only allow the
-microphone on secure pages. Accept the warning once per device.
-
-Phones must be on the same network as the computer. If audio connects but is silent, the
-computer's firewall is blocking UDP: allow `mix-router`, or pin the port with
-`MIX_ROUTER_PORT=40000` and open it.
-
-## Run a show
+The launcher prints the Talk and Manager addresses. Development uses HTTPS because browsers require a secure page for microphone access. Trust the development certificate on each test device, or configure a trusted certificate for venue use. For a production build:
 
 ```bash
-npm run show         # release build of everything, then the gateway serves both apps
+npm run show
 ```
 
-- Talk: `https://<computer-ip>:8443`
+- Talk: `https://<computer-ip>:8443/`
 - Manager: `https://<computer-ip>:8443/manager/`
-- Hardware nodes use plain HTTP on `:8080`.
+- Hardware nodes and local tools: `http://<computer-ip>:8080/`
 
-Config lives in `data/state.json` (channels, packs, volumes) and is safe to copy or edit
-while the gateway is stopped. Set `COMMS_NAME="Stage A"` to change the name in the top bars.
-`COMMS_MEDIA_IP` overrides the address phones send audio to (default: the address they
-used to reach the gateway).
+Keep all devices on the same LAN. Allow mix-router through the computer’s UDP firewall. Set `MIX_ROUTER_PORT=40000` to use a fixed media port if needed.
 
-### Hardware node
+## Configure the ports
+
+In Manager → **Ports**, create a station for each operator and a conference for a party line. On each station, assign **Call to conference** to a key. Listening to that conference is permanent; holding or latching the key adds the operator’s microphone. The seed creates four stations, two conferences and an All call group.
+
+Stations have at most six numbered keys plus **Reply**. Keys can hold multiple functions and use Hold, Tap or Tap/hold mode. Standing functions use **Always**, **Vox** or **On call** instead of a key.
+
+- **Call to port** calls a station or output directly.
+- **Call to group** fans out to the group’s stations and outputs.
+- **Listen to** on a key creates a monitor key; on Always it appears under “Also hearing”.
+- **IFB** combines a program source and interruptions, dimming or cutting program while an interruption is open.
+- **Route audio** lets a trigger switch a route between other ports.
+
+**Groups & conferences** shows derived membership. Adding a station assigns its next free key; adding hardware writes a standing function. **Matrix** is a view of the functions, with cells linking to the owning port. **Incoming** shows routes owned elsewhere. **Live** shows open keys, Vox, callers and items needing attention. An empty conference can be created first and is flagged until it has a talker.
+
+Save changes in the port editor. Invalid routes are rejected without partially changing the show. Remove referring functions before deleting a port or disabling a channel they use.
+
+Unsaved port and node drafts stay available while you navigate Manager. The unsaved-changes banner returns you to each draft or lets you discard it. Failed saves retain the draft; pending saves stay locked across navigation. Reloading or closing the page warns about unsaved edits. Drafts are kept in memory, not browser storage. If another Manager removes a port or node, its draft remains viewable for copying or discarding.
+
+On Talk, choose a station. The top bar names incoming direct callers. Reply targets the last caller that can receive audio; a microphone input can call you but cannot receive a reply. **Levels** sets volumes per source, and the dock controls master volume and mic kill. Red means the operator’s microphone is open, while listen keys remain dimmed.
+
+## Hardware bridges
 
 ```bash
-cargo run --release -p comms-node -- --list                       # see devices
-npm run node -- --gateway http://<computer-ip>:8080 --name "Stage rack" --device "Scarlett 18i20"
+npm run node -- --list
+npm run node -- --gateway http://<computer-ip>:8080 \
+  --name "Stage rack" --device "Scarlett 18i20" --node-id stage-rack
 ```
 
-It appears in Manager → Hardware. You can also create a hardware pack there first (Packs → New pack → Hardware node); a node started with the same `--name` claims it and keeps its channel. Pick its input and output there (pushed to the node over its data channel, applied without reconnecting) and put its pack on a
-channel: on a partyline or direct line it is always keyed; on a PGM channel it is the feed.
-Devices must support 48 kHz.
+Use the exact device name printed by `--list`. Interfaces must support 48 kHz. `--node-id` gives the bridge a stable explicit identity; otherwise one is derived from hostname, node name and device selection. Keep the identity stable across restarts.
 
-## Tests
+The node appears in Manager → **I/O nodes**. Tick the input and output channels in use, assign short names and trims, then save. Every selected channel becomes its own port and its own mono Opus track. For example, Input 3 can feed SHOW while SHOW feeds Output 7 independently of the other circuits.
+
+In-use changes replace the node’s session automatically. Function and trim changes do not require a node restart. Trims are applied once in the router. The node re-registers in the background and retries across gateway outages. Start without selected channels, then configure them in Manager.
+
+## Persistence and API
+
+The show lives in `data/state.json`: ports, node selections and operator volumes. Stop the gateway before editing the file manually. Loading a v1 show migrates it automatically and preserves the original as `state.json.v1.json`.
+
+When upgrading an existing hardware bridge, start it with `--node-id` set to its migrated node ID (the old hardware pack ID in the state file). The new default derived identity cannot infer that old ID. Migration preserves selected physical channel numbers and disabled directions; an ambiguous selection stops migration with an error instead of routing another channel.
+
+Useful environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `COMMS_DATA` | State file path |
+| `COMMS_NAME` | Override the show name in the apps |
+| `PORT`, `HTTPS_PORT` | HTTP and HTTPS ports; defaults 8080 and 8443 |
+| `COMMS_MEDIA_IP` | Override the router’s advertised media address |
+| `MIX_ROUTER_PORT` | Pin the UDP media port |
+| `MIX_ROUTER_ADDR` | Gateway’s control destination; default `127.0.0.1:7100` |
+| `MIX_ROUTER_CONTROL` | Router’s control listener address |
+
+The v2 API is under `/api/v2`: `state`, `events`, `health`, `ports`, `nodes/register`, `nodes/:id`, `show` and `media/sessions`. Port and node updates use `PUT`. Replacing a complete show uses `PUT /show`. Requests are validated against `packages/protocol/schema/protocol.schema.json`; generated TypeScript is checked by typecheck. SSE sends a snapshot followed by revisioned deltas, and clients resynchronize on a gap. Public state omits station PINs; PINs are four digits and stored in the local state file. Manager trusts the local network and has no account system.
+
+A station has one active session; another device choosing it takes over and releases the previous keys. The gateway and router are separate processes. Restarting the gateway preserves router audio, and reconnect synchronization restores live state. Restarting the router requires the clients to reconnect.
+
+## Audio and WiFi
+
+The router mixes at 5 ms, with 48 kHz mono Opus and 10 ms downstream packets. Its adaptive jitter queue targets measured arrival jitter with a one-frame floor, drains excess backlog gradually, and uses Opus packet-loss concealment on underrun. Health stats expose queue depth and target per track. The router marks UDP audio DSCP EF; access-point behavior still matters.
+
+Talk keeps a sending audio track even when the mic is unavailable or off, using silence and disabling Opus DTX. This is intended to keep phone WiFi downlinks awake. It also requests a screen wake lock, runs heartbeat timing in a worker, registers media-session controls and restores audio after returning to the foreground. Device selection is in **Audio devices**; speaker selection depends on browser support. Physical iOS/Android screen-lock behavior still needs venue validation.
+
+Recommended starting WiFi configuration:
+
+- A dedicated 5 GHz SSID for comms, with client isolation off.
+- Channel 44 or 149 where permitted by the access point’s country configuration.
+- WMM on, DTIM 1, and TWT off when those controls are available.
+- Keep the show computer wired to the access point where practical.
+
+The proposed acceptance target is **p50 ≤ 100 ms and p95 ≤ 150 ms mic-to-ear** on the recommended WiFi. This is a target, not a measured promise. See the [verification record](docs/research/2026-09-29-v2-verification.md) for measured results and remaining physical-device checks.
+
+Talk menu → **Latency test** (or `/#latency`) runs a synthetic marker through the browser, network and router without a microphone. It measures software round trip; halving that number is only a rough one-way estimate and excludes acoustic/device delays. Full mic-to-ear measurements need two devices and a recorder, with repeated impulses and separate p50/p95 results for screen-on, screen-locked and listening-only operation.
+
+## Development checks
 
 ```bash
-npm test                 # gateway unit tests + cargo tests
-npm run smoke            # real mix-router, three WebRTC clients over loopback UDP:
-                         # checks N-1 (no self-echo), passive listening, keyed-only
-                         # contribution, and prints impulse latency through the mixer
+npm run typecheck     # includes generated-schema freshness
+npm test              # protocol, gateway, Talk and Rust tests
+npm run build         # production apps
+npm run smoke         # real router + WebRTC clients, v1 reference and v2 routing/reconnect cases
 ```
 
-## Latency
+Regenerate types with `npm run generate -w @comms/protocol` after changing the schema. `npx tsx scripts/seed-v2.ts --output /path/to/state.json` writes a v2 seed to a new file without contacting a gateway.
 
-Target: under 150 ms mic-to-ear on LAN WiFi. Three measurements, from the inside out:
+The repository layout remains `apps/talk`, `apps/manager`, `services/gateway`, `crates/mix-router`, `crates/comms-node` and `packages/protocol`. Parallel routes between the same source and destination carry that source once, using the highest active gain after IFB dim. Their individual functions and gates remain visible and editable. A real interface on another machine, WiFi latency and long-running locked-phone behavior require physical acceptance testing before a live show.
 
-- **Mixer alone** (`npm run smoke`, loopback): impulse in on one client, out of another,
-  roughly 15 to 30 ms at p50 depending on machine load, including 10 ms Opus framing. The
-  smoke test also reports the mixer's own time per 10 ms cycle (Manager footer shows it live).
-- **Software round trip** (Talk menu → Latency test, or open `/#latency`): a quiet tone with a
-  loud marker goes up as a pack's microphone, the mixer plays it straight back, and the page
-  times the marker on a single sample-accurate audio clock. It covers Chrome's encoder, the
-  network, mix-router and the browser's jitter buffer and decoder, and it needs no real
-  microphone or speaker. Measured in Chrome on the same machine (so no WiFi): **83 to 103 ms
-  round trip, about 50 ms one way, 20 of 20 markers heard.** Run it from a phone on WiFi to
-  see the real network add its share.
-- **Mic-to-ear, full**: needs hardware, so it is still a manual clap test. Two phones in a
-  quiet room, both on the same partyline, A keyed. Put both close to a recorder, clap next
-  to A, and read the offset between the clap and its echo from B in the waveform. Repeat
-  about 20 times; note p50 and worst case. A real mic and speaker typically add 20 to 60 ms
-  on top of the software figure.
-
-Chrome stops sending during silence, and the mixer waits for two frames (20 ms) before it
-starts playing a peer after a gap, so the first syllable after silence arrives slightly later
-than steady-state speech. That is why the latency test keeps a carrier running.
-
-## Process layout
-
-Nothing spawns anything else. `mix-router` listens on `127.0.0.1:7100` (`--control ADDR` or
-`MIX_ROUTER_CONTROL`); the gateway connects to it (`MIX_ROUTER_ADDR`) and keeps retrying, so
-start order does not matter. If the gateway restarts, audio keeps flowing and the router's
-`sync` restores who is connected. If the router restarts, phones and nodes reconnect on
-their own. To run the router on another box, point `MIX_ROUTER_ADDR` at it and bind it to a
-reachable address.
-
-## Protocol
-
-`packages/protocol/schema/protocol.schema.json` is the authority. `npm run generate -w
-@comms/protocol` writes `src/generated.ts` (checked by `npm run typecheck`). The gateway
-validates every REST body and session request against the same schema. Snapshot plus
-revision-gated deltas run over SSE; a gap forces a fresh snapshot.
-
-## Where this differs from the spec
-
-- **comms-node does not use `crates/audio-host-api`.** That trait boundary models capture
-  only; the node also needs playback, so it uses cpal directly.
-- Pack PINs are exactly four digits (the spec leaves the format open), stored in plain text
-  in `state.json`, and checked by the gateway when a session opens and by a verify endpoint
-  for the PIN pad. They never appear in `/state`.
-- Master and per-key volume are applied in mix-router (one downstream track per pack).
-- A pack has one live session. A second phone picking the same pack takes it over.
-
-## Buttons, PGM and hardware
-
-- A person's pack has at most **6 buttons** (keys on partyline and direct channels). The
-  gateway refuses a seventh, whichever way it is added, and the Manager shows "4 of 6".
-- **PGM channels are not buttons.** They have no key, no level and no on/off: they play
-  straight into the pack at full level, and a pack can have any number. On the phone they
-  appear as "Also hearing: Program, Announce". (This replaced the earlier per-pack "can turn
-  off" PGM setting; old `state.json` files are migrated on load.)
-- A **hardware node has no limit** on channels. It has one input and one output circuit: its
-  input is added to every channel it is on, and its output is the mix of all of them.
-- Each node has an **input trim and output trim, -24 to +24 dB** (Manager → Packs or
-  Hardware). They are applied in mix-router, so they take effect live with no node restart.
-
-## Audio devices and listening with the screen locked
-
-Menu → **Audio devices** picks the microphone and, in browsers that allow it (Chrome, Edge,
-Firefox on desktop and Android; not Safari), the speaker. The choice is remembered per
-browser. Switching microphone while connected swaps the track without reconnecting.
-
-Listening does not depend on the microphone: if it is blocked, unplugged or suspended, the
-phone still joins and plays the mix ("Listening only"; the Mic button says "No mic" and
-retries when tapped). To keep listening with the screen locked the app:
-
-- sends its heartbeat from a Web Worker, because browsers throttle page timers on a hidden
-  tab; a hidden tab is given 15 to 20 s of silence before it is dropped instead of 4 s
-- registers a media session (lock-screen controls; pause is ignored) and asks the platform
-  for a play-and-record audio session where supported
-- resumes playback if the OS pauses it, and re-acquires the microphone and reconnects if
-  needed when the app returns to the foreground
-
-**This is best effort, not a guarantee, and it has not been tested on a real phone.** Web
-pages have no way to force the OS to keep them alive. Android Chrome generally keeps playing
-audio with the screen off. iOS Safari usually keeps audio playing but suspends microphone
-capture while locked, so you can hear but not talk until you unlock; installing the app to
-the home screen helps. If a locked phone must be reliable for a whole show, the dependable
-fix is a native app or keeping the screen on (the app already holds a screen wake lock).
-
-## Known limits
-
-- Phones and nodes ping the router once a second; a visible tab is dropped after 3.5 to 4 s
-  of silence (measured: killing the mixer is noticed on a phone in about 3.5 s, then it
-  reconnects in under a second).
-- No packet-loss concealment; an underrun is silence. The mixer buffers about 20 ms per peer.
-- Someone heard on two channels you share is heard twice (the two contributions add).
-- A node on several channels hears the sum of each channel's mix, so a person on two of its
-  channels is heard by the node twice.
-- The Manager has no authentication (LAN trust, per the spec).
+An IFB already feeds its configured destination; adding a monitor to that destination does not double its audio. Physical source routes close when their session disconnects, releasing incoming calls, On Call gates and IFB interruptions. Always remains active during silence while connected; use Vox when an interrupt should follow signal activity.

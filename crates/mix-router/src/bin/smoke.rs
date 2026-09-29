@@ -250,7 +250,7 @@ fn main() {
         }
         latencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
         if let (Some(min), Some(max)) = (latencies.first(), latencies.last()) {
-            println!("impulse latency over loopback ({} trials): min {min:.0} ms, p50 {:.0} ms, max {max:.0} ms", latencies.len(), latencies[latencies.len() / 2]);
+            println!("impulse latency over loopback ({} trials): min {min:.0} ms, p50 {:.0} ms, p95 {:.0} ms, max {max:.0} ms", latencies.len(), latencies[latencies.len() / 2], latencies[(latencies.len()*95).div_ceil(100)-1]);
         }
     }
     // Heartbeat: a phone that stops pinging is dropped, and its keys released.

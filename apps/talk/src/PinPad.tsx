@@ -45,7 +45,11 @@ export function PinPad({
 
   return (
     <section className="screen on">
-      <TopBar tone={online ? "" : "wait"} text={online ? systemName : "Reconnecting…"} items={[{ label: "Back to packs", onClick: onBack }]} />
+      <TopBar
+        tone={online ? "" : "wait"}
+        text={online ? systemName : "Reconnecting…"}
+        items={[{ label: "Back to stations", onClick: onBack }]}
+      />
       <div className="pin">
         <div className="who">
           <b>{packName}</b>

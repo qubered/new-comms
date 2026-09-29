@@ -151,3 +151,13 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;bac
 .link{color:var(--pl);text-decoration:underline;padding:0}
 .also{padding:4px 16px 12px;color:var(--fg-3);font-size:13.5px}
 .mic.nomic{background:var(--surface);color:var(--fg-3)}
+
+/* Port keys and source faders. Keep standing feeds above the dock. */
+.app .scroll{padding-bottom:calc(110px + env(safe-area-inset-bottom,0px))}
+.app .grid{padding-bottom:8px}
+.key.listen{--c:var(--fg-3);background:var(--surface)}
+.key.listen .cap{color:var(--fg-2)}
+.key.monitoring{--c:var(--ok)}
+.key.monitoring .state{display:flex;color:var(--ok)}
+.key[aria-disabled=true]{opacity:.45;cursor:default}
+.key[aria-disabled=true]:active{background:var(--key)}

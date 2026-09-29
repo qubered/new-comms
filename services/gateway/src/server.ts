@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { networkInterfaces } from "node:os";
-import type { MediaSessionRequest, ServerEvent } from "@comms/protocol";
+import type { PortSessionRequest, ShowEvent } from "@comms/protocol";
 import { HttpError } from "./errors.ts";
 import { Gateway } from "./gateway.ts";
 import { validate } from "./validate.ts";
@@ -61,86 +61,37 @@ export function buildServer(
     return reply.code(status).send({ error: status >= 500 ? "internal error" : error.message });
   });
 
-  app.get("/api/v1/health", async () => ({
-    ok: true,
-    mixer: gateway.router.ready,
-    mixerStats: gateway.mixerStats ?? null,
-    rev: gateway.rev,
-    online: [...gateway.live.values()].filter((live) => live.connected).length,
-  }));
-
-  app.get("/api/v1/state", async () => gateway.snapshot());
-
-  app.get("/api/v1/events", (request, reply) => {
+  app.get('/api/v2/health', async () => ({ ok: true, mixer: gateway.router.ready, mixerStats: gateway.mixerStats ?? null, rev: gateway.rev, online: [...gateway.live.values()].filter(s => s.connected).length }));
+  app.get('/api/v2/state', async () => gateway.snapshot());
+  app.get('/api/v2/events', (request, reply) => {
     reply.hijack();
     const raw = reply.raw;
-    raw.writeHead(200, {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-accel-buffering": "no",
-    });
-    const send = (event: ServerEvent) => raw.write(`data: ${JSON.stringify(event)}\n\n`);
-    send({ type: "snapshot", ...gateway.snapshot() });
-    const onEvent = (event: ServerEvent) => send(event);
-    gateway.on("event", onEvent);
-    const keepAlive = setInterval(() => raw.write(": keep-alive\n\n"), 15_000);
-    request.raw.on("close", () => {
-      clearInterval(keepAlive);
-      gateway.off("event", onEvent);
-    });
+    raw.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+    const send = (event: ShowEvent) => raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    send({ type: 'snapshot', ...gateway.snapshot() });
+    gateway.on('event', send);
+    const keepAlive = setInterval(() => raw.write(': keep-alive\n\n'), 15000);
+    request.raw.on('close', () => { clearInterval(keepAlive); gateway.off('event', send); });
   });
-
-  // ---- config ----
-  const body = (request: FastifyRequest) => (request.body ?? {}) as Record<string, unknown>;
-  const idOf = (request: FastifyRequest) => (request.params as { id: string }).id;
-
-  app.post("/api/v1/packs", async (request, reply) =>
-    reply.code(201).send(gateway.publicPack(gateway.createPack(body(request)))),
-  );
-  app.patch("/api/v1/packs/:id", async (request) =>
-    gateway.publicPack(gateway.updatePack(idOf(request), body(request))),
-  );
-  app.delete("/api/v1/packs/:id", async (request, reply) => {
-    gateway.deletePack(idOf(request));
-    return reply.code(204).send();
+  const id = (request: FastifyRequest) => (request.params as { id: string }).id;
+  app.put('/api/v2/show', async request => gateway.replaceShow(request.body));
+  app.post('/api/v2/ports', async (request, reply) => reply.code(201).send(gateway.createPort(request.body)));
+  app.put('/api/v2/ports/:id', async request => gateway.updatePort(id(request), request.body));
+  app.delete('/api/v2/ports/:id', async (request, reply) => { gateway.deletePort(id(request)); return reply.code(204).send(); });
+  app.post('/api/v2/ports/:id/pin', async (request, reply) => {
+    const body = validate<{ pin?: string }>('PinCheck', request.body);
+    gateway.verifyPin(id(request), body.pin); return reply.code(204).send();
   });
-  app.post("/api/v1/channels", async (request, reply) => reply.code(201).send(gateway.createChannel(body(request))));
-  app.patch("/api/v1/channels/:id", async (request) => gateway.updateChannel(idOf(request), body(request)));
-  app.delete("/api/v1/channels/:id", async (request, reply) => {
-    gateway.deleteChannel(idOf(request));
-    return reply.code(204).send();
-  });
-
-  app.post("/api/v1/packs/:id/pin", async (request, reply) => {
-    gateway.verifyPin(idOf(request), body(request).pin);
-    return reply.code(204).send();
-  });
-
-  // ---- media (WHEP-style) ----
-  app.post("/api/v1/media/sessions", async (request, reply) => {
-    const { packId, offer, pin } = validate<MediaSessionRequest>("MediaSessionRequest", request.body);
-    const result = await gateway.openSession(
-      packId,
-      offer,
-      pin,
-      candidateIp(request, options.mediaIp),
-      describeClient(request.headers["user-agent"]),
-    );
-    // Ask browsers for 10 ms Opus packets (they default to 20 ms).
-    const answer = result.answer.replace(/(a=rtpmap:\d+ opus\/48000\/2\r\n)/, "$1a=ptime:10\r\n");
+  app.delete('/api/v2/ports/:id/pin', async (request, reply) => { gateway.clearPin(id(request)); return reply.code(204).send(); });
+  app.post('/api/v2/media/sessions', async (request, reply) => {
+    const body = validate<PortSessionRequest>('PortSessionRequest', request.body);
+    if (!!body.portId === !!body.nodeId) throw new HttpError(400, 'Choose exactly one station or node.');
+    const result = await gateway.openSession(body.portId ?? body.nodeId!, body.offer, body.pin, candidateIp(request, options.mediaIp), describeClient(request.headers['user-agent']));
+    const answer = result.answer.replace(/(a=rtpmap:\d+ opus\/48000\/2\r\n)/g, '$1a=ptime:10\r\n');
     return reply.code(201).send({ ...result, answer });
   });
-  app.delete("/api/v1/media/sessions/:id", async (request, reply) => {
-    gateway.closeSession(idOf(request));
-    return reply.code(204).send();
-  });
-
-  // ---- hardware nodes ----
-  app.post("/api/v1/nodes/register", async (request) => {
-    const pack = gateway.registerNode(request.body);
-    return { packId: pack.id };
-  });
-
+  app.delete('/api/v2/media/sessions/:id', async (request, reply) => { gateway.closeSession(id(request)); return reply.code(204).send(); });
+  app.post('/api/v2/nodes/register', async request => gateway.registerNode(request.body));
+  app.put('/api/v2/nodes/:id', async request => gateway.updateNode(id(request), request.body));
   return app;
 }

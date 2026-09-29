@@ -3,6 +3,7 @@
 //! drives it over stdin/stdout (line-delimited JSON); audio never crosses that pipe.
 
 mod control;
+mod graph;
 mod mixer;
 mod peer;
 
@@ -19,17 +20,18 @@ use mixer::Mixer;
 use peer::{FRAME, Peer, PeerEvent};
 use socket2::{Domain, Protocol, Socket, Type};
 
-const TICK: Duration = Duration::from_millis(10);
+const TICK: Duration = Duration::from_millis(5);
 const MAX_PEERS: usize = 64;
-const LEVEL_EVERY: u32 = 10; // ticks: 100 ms
-const STATS_EVERY: u32 = 200; // ticks: 2 s
+const LEVEL_EVERY: u32 = 20; // ticks: 100 ms
+const STATS_EVERY: u32 = 400; // ticks: 2 s
 
 enum Input {
-    Command(Command),
+    Command(u64, Command),
     Datagram {
         local: SocketAddr,
         source: SocketAddr,
-        contents: Vec<u8>,
+        contents: [u8; 2048],
+        len: usize,
     },
     /// A gateway connected; it becomes the only control connection.
     ControlOpened(u64, TcpStream),
@@ -77,6 +79,8 @@ fn bind_media_socket(ip: IpAddr) -> io::Result<UdpSocket> {
     if ip.is_ipv4() {
         let _ = socket.set_tos_v4(DSCP_EF_TOS);
     }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    if ip.is_ipv6() {let _ = socket.set_tclass_v6(DSCP_EF_TOS);}
     socket.bind(&address.into())?;
     Ok(socket.into())
 }
@@ -89,7 +93,8 @@ fn receive_datagrams(socket: &UdpSocket, local: SocketAddr, inputs: &SyncSender<
                 let input = Input::Datagram {
                     local,
                     source,
-                    contents: buffer[..count].to_vec(),
+                    contents: buffer,
+                    len: count,
                 };
                 if inputs.send(input).is_err() {
                     return;
@@ -109,6 +114,8 @@ struct Router {
     crypto: Arc<str0m::crypto::CryptoProvider>,
     sockets: Sockets,
     mixer: Mixer,
+    graph: Option<graph::Graph>,
+    graph_states: HashMap<String,graph::PortState>,
     /// session id -> peer
     peers: HashMap<String, Peer>,
     /// pack id -> live session id (a pack has one session; a newer one replaces it)
@@ -126,6 +133,23 @@ impl Router {
     fn handle_command(&mut self, command: Command, now: Instant) {
         match command {
             Command::Hello => {}
+            Command::Stats => emit(&Event::Stats { tick_avg_us:0,tick_max_us:self.tick_max_us,peers:self.peers.len(),queues:serde_json::Value::Array(self.peers.values().map(Peer::queue_stats).collect()) }),
+            Command::ConfigPorts { ports, crosspoints } => {
+                let graph=self.graph.get_or_insert_with(graph::Graph::default);
+                if let Err(error)=graph.configure(ports,crosspoints) {eprintln!("mix-router: invalid graph: {error}");return;}
+                // A changed in-use set needs a new offer, while routing edits keep sessions alive.
+                for (session,peer) in &mut self.peers {
+                    if self.by_pack.get(&peer.pack_id)!=Some(session) {continue;}
+                    if peer.ports()!=graph.session_ports(&peer.pack_id) {graph.release(&peer.pack_id);peer.close("renegotiate");}
+                    else if peer.connected {graph.connect(&peer.pack_id);}
+                }
+                self.graph_states.retain(|id,_| graph.config(id).is_some());
+                self.frames.retain(|id,_|graph.config(id).is_some());
+                self.peaks.retain(|id,_|graph.config(id).is_some());
+                let ids: Vec<_> = self.by_pack.keys().cloned().collect();
+                for id in ids {self.push_device(&id);}
+                self.push_graph_states(true);
+            }
             Command::Config { channels, packs } => {
                 self.mixer.configure(channels, packs);
                 // Push fresh state so every phone sees the volumes the Manager set.
@@ -141,13 +165,16 @@ impl Router {
                 offer,
                 candidate_ip,
             } => {
-                if self.mixer.pack(&pack_id).is_none() {
+                if self.graph.as_ref().map_or_else(||self.mixer.pack(&pack_id).is_none(),|g|g.session_ports(&pack_id).is_empty()) {
                     return emit(&Event::Rejected {
                         session_id: &session_id,
                         detail: "unknown pack",
                     });
                 }
-                if self.peers.len() >= MAX_PEERS {
+                if self.peers.contains_key(&session_id) {
+                    return emit(&Event::Rejected { session_id: &session_id, detail: "session ID already exists" });
+                }
+                if self.peers.len() >= MAX_PEERS && !self.by_pack.contains_key(&pack_id) {
                     return emit(&Event::Rejected {
                         session_id: &session_id,
                         detail: "capacity reached",
@@ -162,10 +189,14 @@ impl Router {
                         });
                     }
                 };
-                match Peer::open(Arc::clone(&self.crypto), pack_id.clone(), local, &offer, now) {
+                let opened=if let Some(g)=&self.graph {
+                    Peer::open_ports(Arc::clone(&self.crypto),pack_id.clone(),local,&offer,now,&g.session_ports(&pack_id))
+                } else {Peer::open(Arc::clone(&self.crypto),pack_id.clone(),local,&offer,now)};
+                match opened {
                     Ok((peer, answer)) => {
                         // A pack has one live session: the newest wins.
-                        if let Some(old) = self.by_pack.insert(pack_id, session_id.clone()) {
+                        if let Some(old) = self.by_pack.insert(pack_id.clone(), session_id.clone()) {
+                            if let Some(graph)=&mut self.graph {graph.release(&pack_id);}
                             if let Some(old_peer) = self.peers.get_mut(&old) {
                                 old_peer.close("replaced");
                             }
@@ -184,6 +215,7 @@ impl Router {
             }
             Command::Close { session_id } => {
                 if let Some(peer) = self.peers.get_mut(&session_id) {
+                    if self.by_pack.get(&peer.pack_id)==Some(&session_id) {if let Some(graph)=&mut self.graph {graph.release(&peer.pack_id);}}
                     peer.close("requested");
                 }
             }
@@ -192,6 +224,11 @@ impl Router {
 
     /// Tell a hardware node which interface input/output the Manager chose.
     fn push_device(&mut self, pack_id: &str) {
+        if let Some(g)=&self.graph {
+            let ports: Vec<_>=g.session_ports(pack_id).iter().filter_map(|(id,_,_)|g.config(id)).filter_map(|p|p.hardware.as_ref().map(|h|serde_json::json!({"portId":p.id,"direction":p.kind,"channel":h.channel,"trim":h.trim}))).collect();
+            if !ports.is_empty() {if let Some(peer)=self.by_pack.get(pack_id).and_then(|s|self.peers.get_mut(s)) {peer.send_json(serde_json::json!({"type":"device","ports":ports}).to_string());}}
+            return;
+        }
         let Some(pack) = self.mixer.pack(pack_id) else { return };
         if pack.config.kind != control::PackType::Hardware {
             return;
@@ -217,6 +254,7 @@ impl Router {
             .map(|(session_id, pack_id)| SyncSession { session_id, pack_id })
             .collect();
         emit(&Event::Sync { sessions: &view });
+        self.push_graph_states(true);
         for (_, pack) in &sessions {
             if let Some(state) = self.mixer.pack(pack).map(|p| p.state()) {
                 emit(&Event::PackState(&state));
@@ -224,7 +262,21 @@ impl Router {
         }
     }
 
+    fn push_graph_states(&mut self, force: bool) {
+        let Some(graph)=&self.graph else {return};
+        for state in graph.states() {
+            if force || self.graph_states.get(&state.port_id)!=Some(state) {
+                emit(&Event::PortState(state));
+                if let Some(peer)=self.by_pack.get(&state.port_id).and_then(|s|self.peers.get_mut(s)) {
+                    let mut value=serde_json::to_value(state).unwrap();value["type"]=serde_json::json!("state");peer.send_json(value.to_string());
+                }
+                self.graph_states.insert(state.port_id.clone(),state.clone());
+            }
+        }
+    }
+
     fn push_state(&mut self, pack_id: &str) {
+        if self.graph.is_some() {self.push_graph_states(true);return;}
         let Some(state) = self.mixer.pack(pack_id).map(|pack| pack.state()) else {
             return;
         };
@@ -270,6 +322,8 @@ impl Router {
         for (session, pack, event) in applied {
             match event {
                 PeerEvent::Connected => {
+                    if self.by_pack.get(&pack)!=Some(&session) {continue;}
+                    if let Some(graph)=&mut self.graph {graph.connect(&pack);}
                     emit(&Event::Connected {
                         session_id: &session,
                         pack_id: &pack,
@@ -277,7 +331,20 @@ impl Router {
                     self.push_state(&pack);
                     self.push_device(&pack);
                 }
+                PeerEvent::PortMessage(message) => {
+                    if self.by_pack.get(&pack)==Some(&session) {if let Some(graph)=&mut self.graph {graph.apply(&pack,message);self.push_graph_states(false);}}
+                }
                 PeerEvent::Message(message) => {
+                    if let Some(graph)=&mut self.graph {
+                        let message=match message {
+                            control::PeerMessage::MicOff{on}=>Some(graph::Message::MicOff{on}),
+                            control::PeerMessage::MasterVolume{volume}=>Some(graph::Message::MasterVolume{volume}),
+                            control::PeerMessage::Loopback{on}=>Some(graph::Message::Loopback{on}),
+                            _=>None,
+                        };
+                        if self.by_pack.get(&pack)==Some(&session) {if let Some(message)=message {graph.apply(&pack,message);self.push_graph_states(false);}}
+                        continue;
+                    }
                     // Only the pack's live session may drive it.
                     if self.by_pack.get(&pack) == Some(&session) {
                         if self.mixer.apply(&pack, message).is_some() {
@@ -294,6 +361,7 @@ impl Router {
                     });
                     if self.by_pack.get(&pack) == Some(&session) {
                         self.by_pack.remove(&pack);
+                        if let Some(graph)=&mut self.graph {graph.release(&pack);self.push_graph_states(false);}
                         if let Some(state) = self.mixer.release(&pack) {
                             emit(&Event::PackState(&state));
                         }
@@ -306,9 +374,19 @@ impl Router {
     /// One 10 ms mixing cycle.
     fn tick(&mut self, now: Instant) {
         let started = Instant::now();
-        self.frames.clear();
+        // Keep the per-port buffers allocated. Missing/disconnected inputs contribute silence.
+        for frame in self.frames.values_mut() {frame.fill(0.0);}
         for peer in self.peers.values_mut() {
             if !peer.connected {
+                continue;
+            }
+            if let Some(graph)=&self.graph {
+                peer.take_port_frames(|id,mut frame| {
+                    let trim=graph.input_gain(id);for sample in &mut frame {*sample*=trim;}
+                    let peak=frame.iter().fold(0.0_f32,|m,s|m.max(s.abs()));
+                    if let Some(slot)=self.peaks.get_mut(id) {*slot=slot.max(peak);} else {self.peaks.insert(id.to_owned(),peak);}
+                    if let Some(slot)=self.frames.get_mut(id) {*slot=frame;} else {self.frames.insert(id.to_owned(),frame);}
+                });
                 continue;
             }
             let mut frame = [0.0_f32; FRAME];
@@ -327,9 +405,15 @@ impl Router {
                 self.frames.insert(peer.pack_id.clone(), frame);
             }
         }
+        if let Some(graph)=&mut self.graph {graph.prepare(&self.frames);}
+        self.push_graph_states(false);
         let mut out = [0.0_f32; FRAME];
         for peer in self.peers.values_mut() {
             if !peer.connected {
+                continue;
+            }
+            if let Some(graph)=&self.graph {
+                peer.send_port_frames(now,|id,out|graph.mix_for(id,&self.frames,out));
                 continue;
             }
             self.mixer.mix_for(&peer.pack_id, &self.frames, &mut out);
@@ -344,6 +428,7 @@ impl Router {
                 tick_avg_us: (self.tick_sum_us / u64::from(STATS_EVERY)) as u32,
                 tick_max_us: self.tick_max_us,
                 peers: self.peers.values().filter(|peer| peer.connected).count(),
+                queues: serde_json::Value::Array(self.peers.values().map(Peer::queue_stats).collect()),
             });
             self.tick_sum_us = 0;
             self.tick_max_us = 0;
@@ -359,7 +444,7 @@ impl Router {
                 emit(&Event::Levels { levels: &levels });
             }
             self.last_levels_nonzero = nonzero;
-            self.peaks.clear();
+            for peak in self.peaks.values_mut() {*peak=0.0;}
         }
     }
 
@@ -421,6 +506,7 @@ fn main() {
                                 return;
                             };
                             if !adopted {
+                                if !matches!(command,Command::Hello) {return;}
                                 adopted = true;
                                 if let Some(control) = &control {
                                     let _ = control.set_read_timeout(None);
@@ -431,7 +517,7 @@ fn main() {
                                     }
                                 }
                             }
-                            if inputs.send(Input::Command(command)).is_err() {
+                            if inputs.send(Input::Command(id, command)).is_err() {
                                 return;
                             }
                         }
@@ -452,6 +538,8 @@ fn main() {
             inputs: inputs_tx,
         },
         mixer: Mixer::default(),
+        graph: None,
+        graph_states: HashMap::new(),
         peers: HashMap::new(),
         by_pack: HashMap::new(),
         control_generation: 0,
@@ -467,12 +555,12 @@ fn main() {
         let now = Instant::now();
         let wait = router.next_deadline(next_tick).saturating_duration_since(now);
         match inputs.recv_timeout(wait) {
-            Ok(Input::Command(command)) => router.handle_command(command, Instant::now()),
+            Ok(Input::Command(id, command)) => { if id == router.control_generation { router.handle_command(command, Instant::now()); } },
             Ok(Input::Datagram {
                 local,
                 source,
-                contents,
-            }) => router.handle_datagram(local, source, &contents, Instant::now()),
+                contents, len,
+            }) => router.handle_datagram(local, source, &contents[..len], Instant::now()),
             Ok(Input::ControlOpened(id, stream)) => {
                 router.control_generation = id;
                 set_sink(Some(stream));
