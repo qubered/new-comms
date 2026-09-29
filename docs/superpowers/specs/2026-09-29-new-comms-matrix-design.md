@@ -1,184 +1,231 @@
-# new-comms v2 — A matrix with a comms system on top
+# new-comms v2 — Ports, functions and the matrix
 
-Status: **draft for review, 2026-09-29 (rev 2).** Supersedes the data model, keying and
+Status: **draft for review, 2026-09-29 (rev 3).** Supersedes the data model, keying and
 Manager sections of `2026-09-29-new-comms-design.md`. Architecture (gateway, mix-router,
 Talk, comms-node, protocol, transport, latency targets, trust model) is unchanged.
 
-Direction from review: model it the way Riedel Artist does, with Bolero beltpacks in
-integrated mode as the phones. Everything is a port; the matrix of crosspoints between
-ports is the whole system; conferences, groups and IFBs are ports too; a panel's keys are
-a layout over the matrix, not the source of truth.
+Direction from review: model it the way Riedel Artist does. Everything that carries audio
+is a **port**. A port is configured by attaching **functions** (call to a conference,
+listen to a port, route audio…) to its **triggers** (a key, Always, Vox, On Call). The
+**matrix** of crosspoints is what those functions produce when their triggers are active.
+Conferences, groups and IFBs are ports too; you never edit a crosspoint directly unless
+you want to (Route Audio).
 
-Decisions folded in at rev 2: IFB with dim, listen keys, levels in dB, 4-wire pair names,
-operator volume as its own layer, Reply mode per panel, circuits-in-use per node,
-conference-of-conferences deferred.
+Rev 3 replaces rev 2's "crosspoint is the config" with "function on a trigger is the
+config"; everything agreed earlier (six keys, Reply, operator volumes, IFB with dim,
+listen keys, dB levels, pair names, circuits in use, no conference-of-conferences) is
+kept.
 
 ## 1. Ports
 
-A port is anything audio can come from or go to. Five types.
-
-| Type | Direction | What it is |
-|---|---|---|
-| **Panel** | source (mic) and destination (ear) | A person on a phone or browser. Keys, Reply, PIN, master volume, per-source volumes. |
-| **Circuit** | source **or** destination | One channel of a hardware interface on a comms-node: `in` (capture) or `out` (playback). Has a trim. An in and an out can share a pair name ("Truck") and appear as "Truck in" / "Truck out". |
-| **Conference** | source (its mix) and destination (contributions) | A shared mix. Each listener hears the mix minus their own contribution. |
-| **Group** | destination only | A named set of panels and out-circuits. Talking to a group reaches every member; members do not hear each other through it. |
-| **IFB** | source (its output) and destination (program and interrupts) | A program feed that is dimmed or cut while someone talks into it. Always routes into it are *program*; keyed routes into it are *interrupts*. Its output is routed on to a panel or out-circuit. |
-
-Circuits are one-directional so routing reads the way it is spoken: "Stage rack in 3 →
-SHOW", "SHOW → Stage rack out 7".
+| Type | Carries | Triggers | Comes from |
+|---|---|---|---|
+| **Panel** | in (mic) and out (ear) | keys 1–6, Reply, Always, Vox, On Call | A phone or browser picks it. Our Bolero beltpack. |
+| **Input** | in only | Always, Vox, On Call | One capture channel of a comms-node interface. |
+| **Output** | out only | Always, On Call | One playback channel of a comms-node interface. |
+| **Conference** | in (contributions) and out (its mix) | none | Made in Manager. Each listener hears the mix minus itself. |
+| **Group** | out only (fans out to members) | none | Made in Manager. A set of panels and outputs. |
+| **IFB** | in (interrupts) and out (its feed) | none | Made in Manager. Program, dimmed by interrupts. |
 
 ```
 Port {
-  id, name, subText?
-  type: "panel" | "circuit" | "conference" | "group" | "ifb"
-  panel?:      { pin?, masterVolume, replyMode: KeyMode, keys: Key[],
-                 volumes: { [sourcePortId]: 0..100 } }   // operator layer, persisted
-  circuit?:    { nodeId, direction: "in" | "out", index, pair?: string, trim: dB }
-  group?:      { members: portId[] }                      // panels and out-circuits
-  ifb?:        { dim: dB }                                // -∞ = cut; typical -12 to -20
-}
-KeyMode = "ptt" | "latch" | "auto"
-```
-
-## 2. The matrix
-
-The only routing primitive is a **crosspoint**: a directed route from a source port to a
-destination port.
-
-```
-Crosspoint {
-  source: portId        // panel | circuit(in) | conference | ifb
-  destination: portId   // panel | circuit(out) | conference | group | ifb
-  level: dB             // system gain on this route, -40..+12, default 0
-  gate: "always" | "key"
+  id
+  name          // long name: "Stage rack in 03", "Bolero BP 04"
+  label         // short, what a key shows: "Show", "Priya". Defaults from name.
+  alias?        // who/what it is right now: "Priya", "Truck". Shown small.
+  subtitle?     // sub text
+  type: "panel" | "input" | "output" | "conference" | "group" | "ifb"
+  hardware?:    { nodeId, channel, pair?, trim: dB }        // input, output
+  panel?:       { pin?, masterVolume, volumes: {[portId]: 0..100}, replyMode: KeyMode,
+                  vox?: { threshold: dB, hang: ms } }
+  group?:       { members: portId[] }                       // panels and outputs
+  ifb?:         { program: portId, destination: portId, dim: dB }   // dim -∞ = cut
+  triggers:     Trigger[]
 }
 ```
 
-- `gate: "always"`: audio flows whenever the source has audio. Feeds, hot mics, program.
-- `gate: "key"`: audio flows only while a key is down. The key belongs to the panel at
-  the **source** (a talk key) or at the **destination** (a listen key). So a keyed route
-  always involves exactly one panel's key.
-- A panel has at most **6 keys** in total (talk, listen or talk+listen). It may have any
-  number of `always` routes in either direction: those have no button.
-- In-circuits and conferences only ever have `always` outgoing routes. Groups are not
-  sources. No conference/IFB → conference/IFB routes in the MVP, so the graph is acyclic.
-- A route into a group is expanded at mix time into one route per member at the same
-  level and gate. The group stores no audio.
+Hardware ports are made by the gateway when a node registers: one input and one output
+port per interface channel that is ticked "in use" in Manager → Hardware. Panels are
+made in Manager (they are what the phone picker lists). Conferences, groups and IFBs are
+made in Manager.
 
-## 3. What the old types become
+## 2. Triggers
 
-| Old / Artist term | Now |
-|---|---|
-| Party line | A conference. Each member: talk+listen key to it. |
-| Direct line | Priya has a key → Alex's panel; Alex has a key → Priya's. Key heading is the target's name. No "direct" type. |
-| PGM | A conference whose only talker is an in-circuit (`always`). Panels have `always` conf → panel, no key. |
-| IFB | An IFB port. Program = `always` route in (e.g. SHOW conference or an in-circuit). Producer's key → IFB is an interrupt. IFB → talent's out-circuit or panel (`always`). |
-| All call / group call | A talk key whose destination is a group. |
-| Hot mic | Panel → conference with `gate: always`. |
-| Listen key | A key on my panel that gates a route *into* me (press to monitor a source). |
-
-## 4. Keys and the phone (the beltpack)
+A trigger is *when* a port's functions are active.
 
 ```
-Key { destination: portId, function: "talk" | "listen" | "talkListen", mode: KeyMode }
+Trigger {
+  kind: "key" | "reply" | "always" | "vox" | "onCall"
+  key?: 1..6                       // kind "key" only; a panel has at most six
+  mode?: "ptt" | "latch" | "auto"  // key and reply
+  functions: Function[]
+}
 ```
 
-A key owns the crosspoints it implies: `talk` = keyed route me → destination;
-`listen` = keyed route destination → me; `talkListen` = keyed talk route plus an
-`always` listen route (the party-line case; the listen is passive as in v1). Keys are
-ordered; that order is the phone layout. Heading is the destination's name, sub text is
-the destination's sub text. Modes: hold, tap, tap/hold, as in v1.
+- **key** *n*: active while key *n* is down (per its mode). Panels only.
+- **reply**: the beltpack's Reply key. Its only function is `reply`. Panels only. Does
+  not count toward six.
+- **always**: active permanently. How a feed, a hot mic or a fixed route is made.
+- **vox**: active while the port's own input is above `threshold` for longer than a few
+  ms, held for `hang` ms after it drops. Panels and inputs. How a hardware mic joins a
+  conference only when someone speaks, or an input drives a "talking" indicator.
+- **onCall**: active while any other port is calling this one (a `callToPort` or
+  `callToGroup` route into it is open). Inputs, outputs and panels. E.g. an output that
+  only opens to a conference while it is being called.
 
-- **Reply** is a built-in seventh key that does not count toward six. When another panel
-  talks directly to this panel (a keyed panel → panel route opens), it becomes the *last
-  caller* and Reply lights with their name. Pressing Reply talks back to that panel even
-  with no configured route, using the panel's `replyMode` (set in Manager: hold, tap or
-  tap/hold, like any key). The last caller is remembered until someone else calls, and
-  cleared on reconnect.
-- **Volumes are the operator's, like a Bolero rotary.** The panel holds a volume (0–100,
-  default 80) for every source it hears: each key's return path and every listen-only
-  feed. These sit on top of the Manager's crosspoint level (dB) and are persisted per
-  panel. **Levels mode** shows a slider per key and, below the grid, one per feed
-  ("Also hearing"). Master volume is a final gain on the panel.
-- Mic kill, connection loss handling, and the six-key limit behave as in v1.
+A key may carry more than one function (Artist allows it); the Manager UI leads with one.
 
-Real-time control (data channel), phone → router:
+### Always and Vox, spelled out
+
+These two are what make hardware and unattended ports work, so every port type has them
+where it makes sense, and they are the first thing in a port's editor.
+
+**Always** is a trigger that is permanently active. Its functions are the port's standing
+routes:
+- Input port: `callToConference(SHOW)` puts that mic into SHOW all the time (a hot 4-wire
+  from a truck); `callToPort(Stage PA out)` is a fixed tie-line; `routeAudio` writes any
+  standing crosspoint.
+- Output port: `callToConference(SHOW)` makes SHOW come out of it; `listenToPort(IFB 1)`
+  makes it the talent's earpiece.
+- Panel: `listenToPort(Program)` is a feed with no key ("Also hearing"); `callToConference`
+  on Always is a hot mic.
+
+**Vox** is a trigger that is active while the port's own input has signal. Parameters,
+per port, with system defaults:
 
 ```
-{ type: "talk",   destination: portId, on }   // a key target, or the last caller
-{ type: "listen", source: portId, on }         // a listen key
+vox: { threshold: dBFS (default -40), attack: ms (default 20), hang: ms (default 600) }
+```
+
+The router measures each input every 10 ms; the trigger opens after `attack` ms above
+`threshold` and closes `hang` ms after it drops below. Uses:
+- Input port: a wired mic that joins SHOW only when spoken into, so it does not add room
+  noise the rest of the time; a PGM input that lights "Talking" indicators only when
+  there is programme.
+- Panel: a voice-operated mic for someone who cannot hold a key.
+- Vox state is live state: the Manager's Live view shows it, phones show the talker's
+  name on the key the way they do for a held key, and the SSE `levels` event carries it.
+
+**On Call** is the third standing trigger: active while someone is calling this port.
+It is how a PA output can sit silent until a key is pressed to it, and how a panel could
+later beep on an incoming call (beeps are out of scope for now).
+
+## 3. Functions
+
+A function says *what* audio moves when its trigger is active. "Me" is the port that
+owns the trigger. Every function has a `level` (dB, default 0).
+
+| Function | Params | Produces | Who can use it |
+|---|---|---|---|
+| **callToPort** | `to` | me.in → to.out | any port with an in |
+| **callToConference** | `conf` | me.in → conf (gated) **and** conf → me.out (always) | any; a port with no in only listens, with no out only talks |
+| **callToGroup** | `group` | me.in → m.out for every member m | any port with an in |
+| **callToIFB** | `ifb` | me.in → ifb as an *interrupt* | any port with an in |
+| **listenToPort** | `from` | from.out → me.out (from may be a port, conference or IFB) | any port with an out |
+| **routeAudio** | `from`, `to` | from.out → to.in/out (a raw crosspoint anywhere in the matrix) | any port; usually on Always |
+| **reply** | — | me.in → lastCaller.out | panels, Reply trigger |
+
+Notes:
+- `callToConference` on a panel key is the party-line key: talk is keyed, listen is
+  passive and permanent (v1 behaviour). On an input's Always it is "this mic is always
+  in SHOW"; on an output's Always it is "SHOW comes out here".
+- A `listenToPort` on a key is a listen key: press to monitor. On Always it is a feed
+  with no button ("Also hearing").
+- `routeAudio` is how "Input 3 → SHOW" and "SHOW → Output 7" are written when you think
+  in matrix terms; it is also what a key can switch elsewhere in the matrix.
+- Calling a group or a port sets the callee's **last caller**, which Reply uses.
+- Six keys is the only count limit. Always/Vox/On Call functions are unlimited.
+
+## 4. The matrix (derived)
+
+Expanding every port's functions gives the crosspoint set:
+
+```
+Crosspoint { source, destination, level: dB, gate }
+gate = "always" | { port, trigger }   // active when that trigger is active
+```
+
+Constraints on the result (checked in Manager, shown as errors):
+- Groups are never sources; nothing routes *from* a group.
+- No conference/IFB → conference/IFB crosspoints (acyclic for the MVP).
+- A panel has at most six `key` triggers.
+- An IFB needs a program and a destination; a conference needs at least one talker;
+  a group needs members.
+
+The Manager's **Matrix** view shows this expansion: sources down, destinations across;
+a cell is the function(s) behind it and can be edited (which edits the owning port's
+function). It is a view; the port configuration is the truth.
+
+## 5. Mixing
+
+Every 10 ms mix-router:
+1. Collects a frame from every live *in*: panel mics and hardware inputs (trim
+   applied). Runs Vox detection on each.
+2. Resolves gates: `always`; `key` from data-channel state; `vox` from step 1; then
+   `onCall` from the routes already open (one pass, no chaining).
+3. Conferences: sum of open incoming crosspoints × level.
+4. IFBs: program (its `program` port's out) dimmed by `dim` while any interrupt into it
+   is open, plus the open interrupts.
+5. Panels and outputs: sum of open incoming crosspoints × level × (operator volume for
+   panels) with N-1 for conference sources; then master volume or output trim; soft clip.
+   Group destinations were expanded at config time.
+
+Config from gateway → router is the port list (type, in/out capability, group members,
+IFB program/destination/dim, trims, vox params) and the expanded crosspoint list with
+gates. The router stays type-light: it evaluates gates and sums.
+
+## 6. The phone (beltpack)
+
+- Keys 1–6 show the label of the key's first function target (conference, person,
+  group, IFB, output), with the target's subtitle. A listen key shows dimmed.
+- **Reply** shows the last caller's label and talks back with `replyMode`.
+- **Levels** edits the operator's own volume for every source this panel hears: the
+  listen half of each key and every Always listen. Master volume on the dock.
+- "Also hearing" lists Always listens with no key.
+- Mic kill, reconnect, and connection-loss handling as in v1.
+
+Data channel, phone → router:
+
+```
+{ type: "key", key: 1..6 | "reply", on }
 { type: "micOff", on }
-{ type: "volume", source: portId, volume }     // operator layer
+{ type: "volume", source: portId, volume }
 { type: "masterVolume", volume }
 { type: "ping", hidden? }
 ```
 
-Router → phone: `state` (open talks and listens, volumes, master, last caller), `pong`.
+Router → phone: `state` (keys down, volumes, master, last caller, which sources are
+audible), `pong`.
 
-## 5. Hardware nodes are circuit factories
+## 7. Hardware nodes
 
-A comms-node registers with its interface's channel counts. In Manager → Hardware you
-choose which interface channels are **in use** (default: all); each one becomes a
-circuit port, "Stage rack in 1" … "Stage rack out 8", with its own trim. Ins and outs can
-be given a shared pair name. Nothing else is configured on the node; all routing is in
-the matrix.
+A node registers with its interface's channel counts. In Manager → Hardware you tick
+which channels are **in use**; each becomes an input or output port with its own trim,
+and an in and an out can share a **pair** name ("Truck" → "Truck in", "Truck out").
+The node carries one mono Opus track per port in use; changing the in-use set
+renegotiates that node's session, changing functions does not.
 
-The node opens one WebRTC session carrying one mono Opus track per circuit in use
-(sendonly for ins, recvonly for outs). Changing the in-use set renegotiates that node's
-session (a brief glitch on that node only); changing routes does not. On a LAN the cost
-of an unrouted-but-in-use circuit is ~64 kbps and a little CPU, so there is no need to
-be clever beyond the in-use set. Trims are applied in mix-router.
+## 8. Manager (model-level; UX to follow)
 
-## 6. Mixing
+- **Ports**: the list (long name, label, alias, subtitle, type, online), filterable by
+  type and node. A port's editor is its triggers and their functions, plus its
+  type-specific fields. Panels show a beltpack preview.
+- **Groups & conferences**: conferences, groups and IFBs with their members as derived
+  from other ports' functions (T / L / interrupt / program), editable from here too.
+- **Matrix**: the derived grid, editable.
+- **Hardware**: nodes, channels in use, pairs, trims.
+- **Live**: keys down, vox open, last callers; Needs attention (the constraints in §4
+  plus node offline, panel offline with keys).
 
-Every 10 ms mix-router:
-1. Collects a frame from every live source: panel mics, in-circuits (trim applied).
-2. Computes each conference: sum of open incoming routes × level.
-3. Computes each IFB: program (its `always` inputs, summed) dimmed by `dim` while any of
-   its keyed inputs is open, plus the open keyed inputs.
-4. Computes each panel and out-circuit: sum of open incoming routes × level × (operator
-   volume, panels only), where a conference source contributes its mix minus this
-   destination's own contribution (N-1); then master volume or out trim; then soft clip.
-   Group destinations are expanded here.
+## 9. Migration from v1 state
 
-A route is open when its gate is `always` and the source has audio, or `key` and the
-owning panel currently has that key on. Modes stay client-side; the router sees booleans.
+Partyline → conference; each member panel gets a key with `callToConference`. PGM →
+conference; the node's input 1 gets Always `callToConference`; listeners get Always
+`listenToPort(conf)`. Direct → each side a key with `callToPort`. Hardware pack →
+node ports with Always functions. Key volumes → operator volumes; trims carried.
 
-Config from gateway → router is the port list (with type-specific fields the mixer
-needs: dim, group members, trims) and the crosspoint list.
+## 10. Out of scope, still
 
-## 7. Manager
-
-Left nav: **Live**, **Matrix**, **Ports**, **Hardware**.
-
-- **Matrix**: the grid. Sources down the side grouped Panels / Inputs / Conferences /
-  IFBs; destinations across the top grouped Panels / Outputs / Conferences / Groups /
-  IFBs. A cell shows its state: empty, **L** (always route, destination hears source),
-  **T** (talk key), **T+L**, **A** (hot: panel source, always), **P** (program, into an
-  IFB). Click cycles through the states valid for that pair; a level field is in the
-  cell's popover. Row and column headers select a whole row or column. A panel row
-  shows "3 of 6 keys" and refuses a seventh. Filters: conferences only, hardware only,
-  one panel's row and column, search.
-- **Ports**: master/detail list grouped by type. Panel: name, sub text, PIN, master
-  volume, Reply mode, **Keys** (ordered, function and mode per key, phone preview), and
-  its feeds. Conference and IFB: name, sub text, dim (IFB), and a member list that is
-  a convenience view of the port's row and column (T / L / T+L / P per member).
-  Group: name, members. Circuit: name, pair, trim, node and channel.
-- **Hardware**: one card per node; channels in use; its circuits with online state.
-- **Live**: the matrix read-only, red where a keyed route is open, meters on sources;
-  Needs attention (node offline, panel with no keys, conference with no talker, IFB
-  with no program or no output, group with no members); Talking now.
-
-## 8. Migration from v1 state
-
-Mechanical, once, on load of an old `state.json`: partyline → conference with
-talk+listen keys; pgm → conference with an `always` route from the node's in-circuit 1
-and `always` listens; direct → two keys; hardware pack → node with circuits, its routes
-from in 1 and to out 1; key volumes → operator volumes; trims carried over.
-
-## 9. Out of scope, still
-
-Multi-site trunking, call/cue signalling and tally, logic and GPIO, recording, accounts,
-remote access, conference-of-conferences, dual-function keys, per-talker trim, dial-style
-calls beyond Reply.
+Multi-site trunking, GPIO and logic, call signalling and beeps, dim panel speaker,
+dim XP level as a standalone function, audiopatch, clone output, recording, accounts,
+remote access, conference-of-conferences, dual-function keys, per-talker trim.
