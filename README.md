@@ -6,7 +6,7 @@ The [v2 spec](docs/superpowers/specs/2026-09-29-new-comms-matrix-design.md) and 
 
 ## User guide
 
-The [complete user guide](website/docs/welcome.md) covers installation, configuration, operator workflows, hardware, show-day checks, troubleshooting and the reasoning behind the system. It includes screenshots and worked examples.
+Read the [published user guide](https://qubered.github.io/new-comms/). The [guide source](website/docs/welcome.md) covers installation, configuration, operator workflows, hardware, show-day checks, troubleshooting and the reasoning behind the system. It includes screenshots and worked examples.
 
 ```bash
 npm ci
@@ -14,7 +14,7 @@ npm run docs:build
 npm run docs:serve -- --port 3000
 ```
 
-Open `http://localhost:3000/` (or `http://<computer-ip>:3000/` on the LAN). The guide is a standalone Docusaurus site with local search. `npm run docs` starts its editing preview; `website/build/` is the static output.
+Open `http://localhost:3000/` (or `http://<computer-ip>:3000/` on the LAN). The guide is a standalone Docusaurus site with local search. `npm run docs` starts its editing preview; `website/build/` is the static output. GitHub Pages automatically publishes documentation changes merged to `main`.
 
 ## Start a show
 

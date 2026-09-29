@@ -37,5 +37,8 @@ multichannel-interface and venue-WiFi acceptance remain unverified, as recorded 
 `npm run docs:build` creates `website/build/`. `npm run docs:serve -- --port 3000`
 serves it separately from Talk/Manager. Search and illustrations are served locally.
 For a static host, set `DOCS_URL` to the site's origin and `DOCS_BASE_URL` to its
-mount path when building (defaults are localhost:3000 and `/`). Public hosting
-was not provisioned or claimed as part of this documentation change.
+mount path when building (defaults are localhost:3000 and `/`). The guide was subsequently published at `https://qubered.github.io/new-comms/`
+using `.github/workflows/user-guide.yml`. The production base-path build passed
+1,526 local page/asset link checks. GitHub Actions run 36574491899 built and
+deployed successfully; the public homepage returned HTTPS 200. Documentation
+changes merged to main trigger future deployments.
