@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Manager v2 — matrix mockup</title>
+<style>
+/* Same register as manager.html: platform font, sentence case, flat colour. */
+:root{
+  color-scheme:dark;
+  --bg:#121417; --surface:#1A1D21; --raised:#22262B; --raised-2:#2A2F35; --line:#2C3137; --line-2:#3E444C;
+  --fg:#F2F2F0; --fg-2:#A8ADB4; --fg-3:#6F757D;
+  --hot:#E0202F; --pl:#5B9BFF; --direct:#C48BFF; --pgm:#F0B429; --ok:#3FCB7A; --warn:#F5A524;
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--fg);font:14.5px/1.45 var(--ui);-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+button{background:none;border:0;padding:0;cursor:pointer}
+button:disabled{cursor:default;opacity:.45}
+:is(button,input,select,[tabindex]):focus-visible{outline:2px solid var(--pl);outline-offset:2px}
+[hidden]{display:none!important}
+.num{font-variant-numeric:tabular-nums}
+.dim{color:var(--fg-3)} .muted{color:var(--fg-2)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
+.dot.off{background:var(--fg-3)}
+.badge{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:10px;background:var(--raised);font-size:12px;color:var(--fg-2)}
+.badge.hot{background:var(--hot);color:#fff}
+.badge.warn{background:#3d2d10;color:#FFC96B}
+.btn{height:34px;padding:0 12px;border-radius:7px;border:1px solid var(--line-2);background:var(--surface);display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--raised)}
+.btn.primary{background:var(--pl);border-color:var(--pl);color:#0e1116;font-weight:600}
+.btn.quiet{background:none;border-color:transparent;color:var(--fg-2)}
+.btn.on{background:var(--raised-2);border-color:var(--line-2);color:var(--fg)}
+
+.shell{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
+.side{border-right:1px solid var(--line);padding:18px 12px 16px;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;height:100vh}
+.brand{padding:2px 10px 6px;display:flex;flex-direction:column}
+.brand b{font-size:15px} .brand span{color:var(--fg-2);font-size:13px}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:7px;color:var(--fg-2)}
+.nav button:hover{background:var(--surface);color:var(--fg)}
+.nav button.on{background:var(--raised);color:var(--fg)}
+.gw{margin-top:auto;padding:12px 10px 0;border-top:1px solid var(--line);font-size:13px;color:var(--fg-2);display:flex;flex-direction:column;gap:4px}
+.gw .r{display:flex;justify-content:space-between;gap:8px}
+main{min-width:0;padding:22px 28px 64px;display:flex;flex-direction:column;gap:18px}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.head h1{margin:0;font-size:22px;font-weight:600;line-height:1.2}
+.head .sub{color:var(--fg-2);margin-top:3px;font-size:14px;max-width:70ch}
+.tab{display:flex;flex-direction:column;gap:18px}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toolbar input{height:34px;background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:0 10px;width:200px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--fg-3);align-items:center}
+.legend .c{display:inline-flex;align-items:center;gap:6px}
+
+/* the matrix */
+.mwrap{overflow:auto;border:1px solid var(--line);border-radius:9px;max-height:calc(100vh - 230px)}
+table.mx{border-collapse:separate;border-spacing:0}
+.mx th,.mx td{padding:0;vertical-align:middle}
+.mx thead th{position:sticky;top:0;z-index:3;background:var(--surface);border-bottom:1px solid var(--line)}
+.mx thead th.corner{left:0;z-index:5;min-width:190px}
+.mx thead th.grp{height:26px;font-size:12px;font-weight:400;color:var(--fg-3);text-align:left;padding:0 8px;border-left:1px solid var(--line-2);border-bottom:0}
+.mx thead th.col{height:112px;width:32px;min-width:32px;border-left:1px solid var(--line)}
+.mx thead th.col.first{border-left:1px solid var(--line-2)}
+.mx thead th.col .lbl{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:500;font-size:12.5px;color:var(--fg);white-space:nowrap;max-height:104px;overflow:hidden;text-overflow:ellipsis;padding:6px 0;cursor:pointer}
+.mx thead th.col .lbl:hover{text-decoration:underline}
+.mx tbody th{position:sticky;left:0;z-index:2;background:var(--bg);text-align:left;font-weight:500;padding:0 10px 0 12px;border-right:1px solid var(--line-2);border-bottom:1px solid var(--line);white-space:nowrap;font-size:13.5px;min-width:190px}
+.mx tbody tr.grp th{background:var(--surface);color:var(--fg-3);font-weight:400;font-size:12px;height:26px;border-top:1px solid var(--line-2)}
+.mx tbody tr.grp td{background:var(--surface);border-top:1px solid var(--line-2);border-bottom:1px solid var(--line)}
+.mx tbody th .k{color:var(--fg-3);font-size:12px;font-weight:400;margin-left:8px}
+.mx tbody th .k.full{color:var(--warn)}
+.mx tbody th button{text-align:left;color:inherit}
+.mx tbody th button:hover{text-decoration:underline}
+.mx tbody tr{height:32px}
+.mx tbody td{border-bottom:1px solid var(--line);border-left:1px solid var(--line);text-align:center;width:32px;min-width:32px}
+.mx tbody td.first{border-left:1px solid var(--line-2)}
+.cell{display:inline-flex;align-items:center;justify-content:center;width:26px;height:24px;border-radius:4px;font-size:12px;font-weight:600;color:var(--fg-2);cursor:pointer;user-select:none}
+.cell:hover{background:var(--raised)}
+.cell.na{cursor:default;color:transparent} .cell.na:hover{background:none}
+.cell.L{background:#1e3350;color:#9cc2ff}
+.cell.T{background:#3a2a10;color:#FFC96B}
+.cell.TL{background:#1f3a2a;color:#8fe0b0}
+.cell.A{background:#3a1a3f;color:#e2b3ff}
+.cell.P{background:#2c2c44;color:#c6c6ff}
+.cell.live{background:var(--hot)!important;color:#fff!important}
+tr.self td.diag{background:repeating-linear-gradient(45deg,transparent 0 4px,var(--line) 4px 5px)}
+.mx tbody td:hover{background:rgba(255,255,255,.03)}
+
+/* popover */
+.pop{position:fixed;z-index:20;background:var(--surface);border:1px solid var(--line-2);border-radius:9px;padding:12px 14px;display:none;flex-direction:column;gap:10px;min-width:260px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.pop.on{display:flex}
+.pop h3{margin:0;font-size:14px;font-weight:600}
+.pop .row{display:flex;gap:6px;flex-wrap:wrap}
+.pop .row button{height:30px;padding:0 10px;border-radius:6px;background:var(--raised);font-size:13px}
+.pop .row button.on{background:var(--pl);color:#0e1116;font-weight:600}
+.pop .lvl{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--fg-2)}
+.pop input[type=range]{flex:1}
+.pop .help{font-size:12.5px;color:var(--fg-3)}
+
+/* master / detail */
+.pane{display:grid;grid-template-columns:250px minmax(0,1fr);gap:32px;align-items:start}
+.list{display:flex;flex-direction:column;gap:2px}
+.list .grp{padding:12px 8px 4px;color:var(--fg-3);font-size:12.5px}
+.list .item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px;border-radius:7px}
+.list .item:hover{background:var(--surface)} .list .item.on{background:var(--raised)}
+.list .item .m{flex:1;min-width:0} .list .item .s{display:block;font-size:12.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.editor{display:flex;flex-direction:column;gap:26px;max-width:880px}
+.ed-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.name-in{font-size:22px;font-weight:600;background:none;border:0;border-bottom:1px solid transparent;padding:2px 0;max-width:420px;width:100%}
+.name-in:hover{border-bottom-color:var(--line-2)} .name-in:focus{outline:0;border-bottom-color:var(--pl)}
+section.blk{display:flex;flex-direction:column;gap:12px}
+section.blk>h3{margin:0;font-size:14px;font-weight:600;color:var(--fg-2)}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 24px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13.5px;color:var(--fg-2)} .field .help{font-size:12.5px;color:var(--fg-3)}
+.in,.sel{height:36px;background:var(--surface);border:1px solid var(--line-2);border-radius:7px;padding:0 10px;width:100%}
+.sel{-webkit-appearance:none;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--fg-3) 50%),linear-gradient(135deg,var(--fg-3) 50%,transparent 50%);background-position:calc(100% - 14px) 15px,calc(100% - 9px) 15px;background-size:5px 5px;background-repeat:no-repeat;padding-right:28px}
+.seg{display:inline-flex;background:var(--surface);border:1px solid var(--line-2);border-radius:7px;padding:2px;gap:2px}
+.seg button{height:28px;padding:0 12px;border-radius:5px;color:var(--fg-2);font-size:13.5px}
+.seg button.on{background:var(--raised-2);color:var(--fg)}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-weight:500;font-size:13px;color:var(--fg-3);padding:0 8px 8px;border-bottom:1px solid var(--line)}
+.tbl td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl .sel{height:32px;min-width:118px}
+.rowact{white-space:nowrap;text-align:right}
+.rowact button{width:28px;height:28px;border-radius:6px;color:var(--fg-3);font-size:15px}
+.rowact button:hover:not(:disabled){background:var(--raised);color:var(--fg)}
+.sw{display:inline-block;width:3px;height:15px;border-radius:1px;vertical-align:-2px;margin-right:8px;background:var(--line-2)}
+.sw.conference{background:var(--pl)} .sw.panel{background:var(--ok)} .sw.circuit{background:var(--pgm)} .sw.group{background:var(--direct)} .sw.ifb{background:#c6c6ff}
+.keys-wrap{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:28px;align-items:start}
+.preview{background:#0d0f12;border:1px solid var(--line-2);border-radius:18px;padding:12px 10px 14px;display:flex;flex-direction:column;gap:8px}
+.preview .pt{display:flex;justify-content:space-between;font-size:11px;color:var(--fg-2);padding:0 4px}
+.preview .pn{font-size:14px;font-weight:600;padding:0 4px}
+.preview .pg{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.pkey{position:relative;--c:var(--pl);min-height:58px;border-radius:6px;background:#22262B;padding:9px 7px 7px;overflow:hidden}
+.pkey::before{content:"";position:absolute;left:7px;right:7px;top:0;height:2px;background:var(--c)}
+.pkey.panel{--c:var(--ok)} .pkey.group{--c:var(--direct)} .pkey.ifb{--c:#c6c6ff} .pkey.circuit{--c:var(--pgm)}
+.pkey .n{font-size:11.5px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pkey .s{font-size:9.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pkey.reply{background:#1a1d21;border:1px dashed var(--line-2);grid-column:1/-1;min-height:40px}
+.pkey.reply::before{display:none}
+.preview .cap{font-size:12px;color:var(--fg-3);text-align:center;padding-top:4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chipx{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 6px 0 10px;border-radius:7px;background:var(--surface);border:1px solid var(--line-2)}
+.chipx .cell{width:auto;padding:0 6px;height:22px;font-size:11px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.card .ch{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.card .ch b{font-size:16px}
+.circ{display:grid;grid-template-columns:auto 1fr auto auto;gap:6px 12px;align-items:center;font-size:13.5px}
+.circ .hd{color:var(--fg-3);font-size:12px}
+.circ input[type=checkbox]{width:16px;height:16px;accent-color:var(--pl)}
+.circ .nm{background:none;border:0;border-bottom:1px solid transparent;padding:2px 0;min-width:0}
+.circ .nm:hover{border-bottom-color:var(--line-2)}
+.circ .trim{color:var(--fg-2)}
+.live{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start}
+.rail{display:flex;flex-direction:column;gap:22px}
+.rail h2{margin:0 0 8px;font-size:14px;font-weight:600;color:var(--fg-2)}
+.attn .it{display:grid;grid-template-columns:8px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.attn .it .dot{margin-top:6px} .attn .it small{display:block;color:var(--fg-2);font-size:13px}
+.talker{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+.talker .c{color:var(--fg-2);font-size:13px}
+.empty{color:var(--fg-3);font-size:13.5px}
+
+/* phone (talk) */
+.phone{width:390px;height:780px;border:1px solid #3a3f46;border-radius:40px;background:var(--bg);overflow:hidden;position:relative;display:flex;flex-direction:column}
+.phone .top{padding:16px 16px 8px;display:flex;align-items:center;gap:10px;font-size:14px;color:var(--fg-2)}
+.phone .packrow{display:flex;align-items:center;justify-content:space-between;padding:6px 16px 10px}
+.phone .packrow .name{font-weight:600;font-size:20px}
+.phone .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 12px}
+.key{position:relative;--c:var(--pl);min-height:118px;border-radius:10px;background:var(--raised);padding:14px 12px 12px;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.key::before{content:"";position:absolute;left:12px;right:12px;top:0;height:3px;background:var(--c)}
+.key.panel{--c:var(--ok)} .key.group{--c:var(--direct)} .key.ifb{--c:#c6c6ff}
+.key .cap{font-size:20px;font-weight:600;line-height:1.2} .key .full{font-size:13.5px;color:var(--fg-3);min-height:19px}
+.key .who{margin-top:auto;font-size:14px;color:var(--fg)}
+.key.hot{background:var(--hot)} .key.hot::before{background:#fff} .key.hot .full{color:rgba(255,255,255,.7)}
+.key.listen{background:var(--surface)} .key.listen .cap{color:var(--fg-2)}
+.reply{margin:8px 12px 0;border-radius:10px;background:var(--surface);border:1px dashed var(--line-2);padding:12px;display:flex;justify-content:space-between;align-items:center;min-height:56px}
+.reply.on{background:#1e3350;border-style:solid;border-color:#2b4a78}
+.reply .r1{font-weight:600} .reply .r2{font-size:13px;color:var(--fg-2)}
+.also{padding:12px 16px;color:var(--fg-3);font-size:13.5px}
+.dock{margin-top:auto;border-top:1px solid var(--line);padding:12px 16px 20px;display:flex;align-items:center;gap:14px;font-size:13px;color:var(--fg-2)}
+.mic{width:86px;height:64px;border-radius:10px;background:var(--raised);display:flex;align-items:center;justify-content:center;flex:none;font-size:12.5px}
+.stage{display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap}
+.notes{max-width:420px;color:var(--fg-2);font-size:14px;display:flex;flex-direction:column;gap:10px}
+.notes p{margin:0}
+@media (max-width:900px){.pane,.live,.keys-wrap{grid-template-columns:1fr}.shell{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;border-right:0;border-bottom:1px solid var(--line)}.nav{flex-direction:row}.gw{display:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><b>Manager</b><span>Stage A</span></div>
+    <nav class="nav" id="nav">
+      <button data-tab="live">Live <span id="n-live"></span></button>
+      <button class="on" data-tab="matrix">Matrix</button>
+      <button data-tab="ports">Ports <span class="dim" id="n-ports"></span></button>
+      <button data-tab="hardware">Hardware <span class="dim" id="n-hw"></span></button>
+      <button data-tab="talk">Talk (phone)</button>
+    </nav>
+    <div class="gw">
+      <div class="r"><span>Gateway</span><span class="num">10.0.0.12</span></div>
+      <div class="r"><span>Mixer</span><span class="num">OK, 0.2 ms</span></div>
+      <div class="r"><span>Online</span><span class="num" id="gw-online"></span></div>
+    </div>
+  </aside>
+
+  <main>
+    <!-- MATRIX -->
+    <section class="tab" id="tab-matrix">
+      <div class="head">
+        <div><h1>Matrix</h1><div class="sub">Sources down the side, destinations across the top. Click a cell to change what it does; click again to cycle. A panel's keys are the T cells in its row (at most six).</div></div>
+        <button class="btn primary" id="new-port">New port</button>
+      </div>
+      <div class="toolbar">
+        <input placeholder="Search ports" id="mx-search" aria-label="Search ports">
+        <span class="seg" id="mx-filter"><button class="on" data-f="all">All</button><button data-f="conf">Conferences</button><button data-f="hw">Hardware</button><button data-f="ifb">IFB</button></span>
+        <span class="dim" id="mx-focus"></span>
+        <span class="legend" style="margin-left:auto">
+          <span class="c"><span class="cell L">L</span>listens</span>
+          <span class="c"><span class="cell T">T</span>talk key</span>
+          <span class="c"><span class="cell TL">TL</span>talk + listen</span>
+          <span class="c"><span class="cell A">A</span>always (hot)</span>
+          <span class="c"><span class="cell P">P</span>program</span>
+        </span>
+      </div>
+      <div class="mwrap" id="mwrap"><table class="mx" id="mx"></table></div>
+    </section>
+
+    <!-- PORTS -->
+    <section class="tab" id="tab-ports" hidden>
+      <div class="head">
+        <div><h1>Ports</h1><div class="sub">Everything audio comes from or goes to. Panels are people. Circuits are hardware channels. Conferences, groups and IFBs are made here and wired in the matrix.</div></div>
+        <button class="btn primary">New port</button>
+      </div>
+      <div class="pane"><div class="list" id="port-list"></div><div class="editor" id="port-editor"></div></div>
+    </section>
+
+    <!-- HARDWARE -->
+    <section class="tab" id="tab-hardware" hidden>
+      <div class="head"><div><h1>Hardware</h1><div class="sub">A node offers its interface's channels. Tick the ones in use and each becomes a circuit port you can route in the matrix. Give an in and an out a shared name to show them as a pair.</div></div></div>
+      <div class="cards" id="hw"></div>
+    </section>
+
+    <!-- LIVE -->
+    <section class="tab" id="tab-live" hidden>
+      <div class="head"><div><h1>Live</h1><div class="sub">The matrix as it is right now. Red is a key that is down. Click a name to open it.</div></div></div>
+      <div class="live">
+        <div class="mwrap" style="max-height:calc(100vh - 200px)"><table class="mx" id="mx-live"></table></div>
+        <div class="rail">
+          <div><h2>Needs attention <span class="badge warn" id="attn-n"></span></h2><div class="attn" id="attn"></div></div>
+          <div><h2>Talking now</h2><div id="talkers"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TALK -->
+    <section class="tab" id="tab-talk" hidden>
+      <div class="head"><div><h1>Talk (phone)</h1><div class="sub">What the Director's panel looks like. Six keys, a Reply key, and the feeds with no key listed underneath.</div></div></div>
+      <div class="stage">
+        <div class="phone" id="phone"></div>
+        <div class="notes">
+          <p><b>Keys</b> are the T cells in this panel's row of the matrix, in the order set in Ports. A key's heading is the port it talks to: a conference, a person, a group, an IFB or a 4-wire out.</p>
+          <p><b>Listen keys</b> (a key with function "listen") show dimmed and toggle monitoring of a source.</p>
+          <p><b>Reply</b> lights with the name of whoever last talked to this panel directly, and talks back to them. It does not count toward six. Its mode is set per panel.</p>
+          <p><b>Levels</b> adjusts the operator's own volume for every source heard: the six keys and the feeds underneath. The Manager's crosspoint gain sits beneath that.</p>
+          <button class="btn" id="sim-call">Simulate: SM calls the Director</button>
+          <button class="btn" id="sim-key">Simulate: hold SHOW</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="pop" id="pop"></div>
+
+<script>
+(() => {
+  // ---------- data ----------
+  const P = [];
+  const add = (id, name, type, extra={}) => (P.push({id, name, type, ...extra}), id);
+  const panels = [['dir','Director','Alex'],['sm','Stage Manager','Priya'],['td','TD','Sam'],['cam1','Camera 1',''],['cam2','Camera 2',''],['cam3','Camera 3',''],['lx','Lighting','Jo'],['a1','Audio A1',''],['a2','Audio A2',''],['foh','FOH',''],['fly','Flys',''],['gfx','Graphics','']];
+  panels.forEach(([id,name,sub]) => add(id,name,'panel',{sub,online:id!=='cam3'&&id!=='gfx',keys:[],replyMode:'ptt'}));
+  const node1 = {id:'rack',name:'Stage rack',device:'Focusrite Scarlett 18i20',ip:'10.0.0.31',online:true,ins:8,outs:8,use:{in:[1,2,3],out:[1,2,7]},pairs:{1:'Truck',2:'Announce mic'}};
+  const node2 = {id:'pgmb',name:'PGM bridge',device:'MOTU M4',ip:'10.0.0.32',online:true,ins:4,outs:4,use:{in:[1,2],out:[1]},pairs:{1:'Desk'}};
+  const NODES = [node1,node2];
+  const circName = (n,dir,i) => (n.pairs[i] ? `${n.pairs[i]} ${dir}` : `${n.name} ${dir} ${i}`);
+  NODES.forEach(n => { n.use.in.forEach(i => add(`${n.id}-in${i}`, circName(n,'in',i), 'circuit', {dir:'in', node:n.id, idx:i, trim:0, online:n.online}));
+                       n.use.out.forEach(i => add(`${n.id}-out${i}`, circName(n,'out',i), 'circuit', {dir:'out', node:n.id, idx:i, trim:0, online:n.online})); });
+  add('show','SHOW','conference',{sub:'Everyone on the floor'}); add('cams','Cameras','conference',{sub:'Cam 1–3, TD, director'}); add('lxc','Lighting','conference',{sub:'Jo and SM'}); add('pgm','Program','conference',{sub:'Show mix'});
+  add('gcams','All cameras','group',{members:['cam1','cam2','cam3']}); add('gall','All call','group',{members:panels.map(p=>p[0])});
+  add('ifb1','Talent IFB','ifb',{dim:-15, sub:'Program, ducked by director'});
+  const byId = Object.fromEntries(P.map(p => [p.id, p]));
+
+  // crosspoints: key "src>dst" -> {gate, level}
+  const X = new Map();
+  const set = (s,d,gate,level=0) => X.set(s+'>'+d,{gate,level});
+  const tl = (p,c) => { set(p,c,'key'); set(c,p,'always'); };
+  ['dir','sm','td','lx','a1','a2','foh','fly'].forEach(p => tl(p,'show'));
+  ['cam1','cam2','cam3','td','dir'].forEach(p => tl(p,'cams'));
+  ['lx','sm'].forEach(p => tl(p,'lxc'));
+  set('pgmb-in1','pgm','always'); ['dir','sm','a1','a2','foh','gfx'].forEach(p => set('pgm',p,'always'));
+  set('rack-in1','show','always'); set('show','rack-out1','always');           // Truck 4-wire on SHOW
+  set('rack-in2','show','always',-6);                                            // announce mic hot into SHOW
+  set('sm','dir','key'); set('dir','sm','key');                                   // direct keys both ways
+  set('dir','gcams','key'); set('sm','gall','key');
+  set('pgm','ifb1','always'); set('dir','ifb1','key'); set('ifb1','rack-out7','always'); set('ifb1','gfx','always');
+  set('show','pgmb-out1','always',-3);
+  // key order per panel (talk keys)
+  byId.dir.keys = [['show','talkListen','auto'],['cams','talkListen','auto'],['sm','talk','latch'],['gcams','talk','ptt'],['ifb1','talk','ptt']];
+  byId.sm.keys  = [['show','talkListen','auto'],['lxc','talkListen','latch'],['dir','talk','latch'],['gall','talk','ptt'],['pgm','listen','latch']];
+  byId.sm.keys.forEach(k => { if (k[1]==='listen') { X.delete('pgm>sm'); set('pgm','sm','key'); } });
+  P.filter(p=>p.type==='panel' && !p.keys.length).forEach(p => { p.keys = [...X.keys()].filter(k => k.startsWith(p.id+'>') && X.get(k).gate==='key').map(k => [k.split('>')[1], X.has(k.split('>')[1]+'>'+p.id) ? 'talkListen' : 'talk', 'ptt']); });
+
+  const live = new Set(['sm>show','rack-in1>show']);   // open keyed routes / audible sources (demo)
+  const TYPE = {panel:'Panel',circuit:'Circuit',conference:'Conference',group:'Group',ifb:'IFB'};
+  const $ = s => document.querySelector(s);
+
+  // ---------- matrix ----------
+  const isSrc = p => p.type==='panel' || (p.type==='circuit'&&p.dir==='in') || p.type==='conference' || p.type==='ifb';
+  const isDst = p => p.type==='panel' || (p.type==='circuit'&&p.dir==='out') || p.type==='conference' || p.type==='group' || p.type==='ifb';
+  const srcGroups = [['Panels',p=>p.type==='panel'],['Inputs',p=>p.type==='circuit'&&p.dir==='in'],['Conferences',p=>p.type==='conference'],['IFBs',p=>p.type==='ifb']];
+  const dstGroups = [['Panels',p=>p.type==='panel'],['Outputs',p=>p.type==='circuit'&&p.dir==='out'],['Conferences',p=>p.type==='conference'],['Groups',p=>p.type==='group'],['IFBs',p=>p.type==='ifb']];
+  const keyCount = p => [...X.entries()].filter(([k,v]) => v.gate==='key' && (k.startsWith(p.id+'>') || k.endsWith('>'+p.id))).length;
+  // which states a (src,dst) pair can take
+  function options(s,d) {
+    if (s.id===d.id) return [];
+    if ((s.type==='conference'||s.type==='ifb') && (d.type==='conference'||d.type==='ifb')) return [];
+    const o = ['none'];
+    if (d.type==='ifb') { if (s.type==='panel') o.push('T'); if (s.type!=='panel') o.push('P'); if (s.type==='panel') o.push('A'); return o; }
+    if (s.type==='panel') { o.push('T'); if (d.type==='panel'||d.type==='conference') o.push('TL'); o.push('A'); if (d.type==='panel') o.push('L'); return o; }
+    if (d.type==='panel'||d.type==='circuit'||d.type==='conference') { o.push('L'); }
+    if (d.type==='group' && s.type!=='panel') return ['none'];
+    return o;
+  }
+  function state(s,d) {
+    const f = X.get(s.id+'>'+d.id), r = X.get(d.id+'>'+s.id);
+    if (d.type==='ifb' && f) return f.gate==='key' ? 'T' : 'P';
+    if (!f) return 'none';
+    if (s.type==='panel') { if (f.gate==='always') return 'A'; return (r && r.gate==='always' && (d.type==='conference'||d.type==='panel')) ? 'TL' : 'T'; }
+    return 'L';
+  }
+  function apply(s,d,st) {
+    const level = (X.get(s.id+'>'+d.id)||{}).level||0;
+    X.delete(s.id+'>'+d.id);
+    if (st==='TL') { const r = X.get(d.id+'>'+s.id); if (!r) set(d.id,s.id,'always'); }
+    if (st==='T' && s.type==='panel') { const r = X.get(d.id+'>'+s.id); if (r && r.gate==='always' && (d.type==='conference')) X.delete(d.id+'>'+s.id); }
+    if (st==='none') { if (s.type==='panel' && d.type==='conference') X.delete(d.id+'>'+s.id); return; }
+    if (st==='L' || st==='P') set(s.id,d.id,'always',level);
+    if (st==='A') set(s.id,d.id,'always',level);
+    if (st==='T' || st==='TL') set(s.id,d.id,'key',level);
+    syncKeys(s); syncKeys(d);
+  }
+  function syncKeys(p) {
+    if (p.type!=='panel') return;
+    const talk = [...X.entries()].filter(([k,v]) => v.gate==='key' && k.startsWith(p.id+'>')).map(([k])=>k.split('>')[1]);
+    const listen = [...X.entries()].filter(([k,v]) => v.gate==='key' && k.endsWith('>'+p.id)).map(([k])=>k.split('>')[0]);
+    const cur = p.keys.filter(k => (k[1]!=='listen' && talk.includes(k[0])) || (k[1]==='listen' && listen.includes(k[0])));
+    talk.forEach(d => { if (!cur.some(k=>k[0]===d && k[1]!=='listen')) cur.push([d, X.has(d+'>'+p.id)&&X.get(d+'>'+p.id).gate==='always' ? 'talkListen':'talk','ptt']); });
+    listen.forEach(s => { if (!cur.some(k=>k[0]===s && k[1]==='listen')) cur.push([s,'listen','latch']); });
+    cur.forEach(k => { if (k[1]!=='listen') k[1] = (X.get(k[0]+'>'+p.id)||{}).gate==='always' && byId[k[0]].type==='conference' ? 'talkListen':'talk'; });
+    p.keys = cur;
+  }
+  let filter='all', search='', focus=null;
+  const visible = p => { if (search && !p.name.toLowerCase().includes(search)) return false;
+    if (filter==='conf') return p.type==='conference' || p.type==='panel' || p.type==='circuit';
+    if (filter==='hw') return p.type==='circuit' || p.type==='conference' || p.type==='ifb';
+    if (filter==='ifb') return p.type==='ifb' || p.type==='panel' || p.type==='circuit' || p.type==='conference';
+    return true; };
+  const cols = () => { let c = P.filter(isDst).filter(visible); if (filter==='conf') c = c.filter(p=>p.type==='conference'); if (filter==='hw') c = c.filter(p=>p.type!=='panel'); if (filter==='ifb') c = c.filter(p=>p.type==='ifb'); if (focus) c = c.filter(p=>p.id===focus || X.has(focus+'>'+p.id) || X.has(p.id+'>'+focus) || p.type!=='panel'); return c; };
+  const rows = () => { let r = P.filter(isSrc).filter(visible); if (filter==='hw') r = r.filter(p=>p.type!=='panel'); if (filter==='ifb') r = r.filter(p=>p.type!=='conference'||X.has(p.id+'>ifb1')); if (focus) r = r.filter(p=>p.id===focus || X.has(p.id+'>'+focus) || X.has(focus+'>'+p.id) || p.type!=='panel'); return r; };
+
+  function renderMatrix(table, readOnly) {
+    const C = cols(), R = rows();
+    const colGroups = dstGroups.map(([t,f]) => [t, C.filter(f)]).filter(g => g[1].length);
+    let h = `<thead><tr><th class="corner" rowspan="2"></th>${colGroups.map(([t,g]) => `<th class="grp" colspan="${g.length}">${t}</th>`).join('')}</tr><tr>`;
+    colGroups.forEach(([,g]) => g.forEach((d,i) => { h += `<th class="col ${i===0?'first':''}"><span class="lbl" data-focus="${d.id}" title="${TYPE[d.type]}">${d.name}</span></th>`; }));
+    h += '</tr></thead><tbody>';
+    srcGroups.forEach(([t,f]) => {
+      const g = R.filter(f); if (!g.length) return;
+      h += `<tr class="grp"><th>${t}</th><td colspan="${C.length}"></td></tr>`;
+      g.forEach(s => {
+        const kc = s.type==='panel' ? keyCount(s) : 0;
+        h += `<tr class="${s.type==='panel'&&!s.online?'offline':''}"><th><button data-open="${s.id}"><span class="sw ${s.type}"></span>${s.name}</button>${s.type==='panel' ? `<span class="k num ${kc>=6?'full':''}">${kc} of 6 keys</span>` : ''}${s.type==='panel'&&!s.online?'<span class="k">offline</span>':''}</th>`;
+        let ci = 0;
+        colGroups.forEach(([,cg]) => cg.forEach((d,i) => {
+          const opts = options(s,d); const st = state(s,d);
+          const isLive = readOnly && ((live.has(s.id+'>'+d.id)) || (st==='L' && live.has(s.id) ));
+          const cls = !opts.length ? 'na' : st==='none' ? '' : st;
+          h += `<td class="${i===0?'first':''} ${s.id===d.id?'diag':''}"><span class="cell ${cls} ${isLive?'live':''}" data-s="${s.id}" data-d="${d.id}" title="${s.name} → ${d.name}${X.has(s.id+'>'+d.id)?' · '+((X.get(s.id+'>'+d.id).level||0)+' dB'):''}">${st==='none'?'·':st}</span></td>`;
+          ci++;
+        }));
+        h += '</tr>';
+      });
+    });
+    table.innerHTML = h + '</tbody>';
+  }
+  const refreshMatrix = () => { renderMatrix($('#mx'), false); renderMatrix($('#mx-live'), true); $('#mx-focus').textContent = focus ? `Showing ${byId[focus].name}'s row and column. ` : ''; counts(); };
+  $('#mx').addEventListener('click', e => {
+    const open = e.target.closest('[data-open]'); if (open) { focus = focus===open.dataset.open ? null : open.dataset.open; refreshMatrix(); return; }
+    const lbl = e.target.closest('[data-focus]'); if (lbl) { focus = focus===lbl.dataset.focus ? null : lbl.dataset.focus; refreshMatrix(); return; }
+    const c = e.target.closest('.cell'); if (!c || c.classList.contains('na')) return;
+    openPop(c, byId[c.dataset.s], byId[c.dataset.d]);
+  });
+  $('#mx-live').addEventListener('click', e => { const open = e.target.closest('[data-open]'); if (open) { selPort = open.dataset.open; renderPorts(); go('ports'); } });
+  $('#mx-search').addEventListener('input', e => { search = e.target.value.trim().toLowerCase(); refreshMatrix(); });
+  $('#mx-filter').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; filter = b.dataset.f; [...$('#mx-filter').children].forEach(x => x.classList.toggle('on', x===b)); refreshMatrix(); });
+
+  // popover: choose the state + level
+  const pop = $('#pop');
+  const LABEL = {none:'Nothing', L:'Listens', T:'Talk key', TL:'Talk + listen', A:'Always (hot)', P:'Program'};
+  function openPop(cell, s, d) {
+    const opts = options(s,d), st = state(s,d);
+    const r = cell.getBoundingClientRect();
+    const sixFull = s.type==='panel' && keyCount(s) >= 6 && st!=='T' && st!=='TL';
+    pop.innerHTML = `<h3>${s.name} <span class="dim">→</span> ${d.name}</h3>
+      <div class="row">${opts.map(o => `<button data-st="${o}" class="${o===st?'on':''}" ${(o==='T'||o==='TL')&&sixFull?'disabled title="This panel already has six keys"':''}>${LABEL[o]}</button>`).join('')}</div>
+      <div class="lvl"><span>Level</span><input type="range" min="-40" max="12" step="0.5" value="${(X.get(s.id+'>'+d.id)||{}).level||0}"><b class="num" id="pop-v">${fmtdb((X.get(s.id+'>'+d.id)||{}).level||0)}</b></div>
+      <div class="help">${d.type==='ifb' ? 'Program is dimmed by the IFB\'s dim while any talk key into it is down.' : s.type==='panel' && d.type==='conference' ? 'Talk + listen is a party-line key. Listen is the passive return; it has no button.' : d.type==='group' ? 'Talking to a group reaches every member. Members do not hear each other through it.' : 'The operator\'s own volume sits on top of this level.'}</div>`;
+    pop.classList.add('on');
+    pop.style.left = Math.min(r.left, innerWidth - 300) + 'px'; pop.style.top = (r.bottom + 6) + 'px';
+    pop.querySelector('input').addEventListener('input', e => { $('#pop-v').textContent = fmtdb(+e.target.value); const x = X.get(s.id+'>'+d.id); if (x) x.level = +e.target.value; });
+    pop.querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', () => { apply(s,d,b.dataset.st); pop.classList.remove('on'); refreshMatrix(); renderPorts(); }));
+  }
+  document.addEventListener('click', e => { if (!pop.contains(e.target) && !e.target.closest('.cell')) pop.classList.remove('on'); });
+  const fmtdb = v => (v>0?'+':'') + v + ' dB';
+
+  // ---------- ports ----------
+  let selPort = 'dir';
+  const MODE = {ptt:'Hold',latch:'Tap',auto:'Tap/hold'}, FN = {talk:'Talk',listen:'Listen',talkListen:'Talk + listen'};
+  function renderPortList() {
+    const groups = [['Panels','panel'],['Conferences','conference'],['Groups','group'],['IFBs','ifb'],['Circuits','circuit']];
+    $('#port-list').innerHTML = groups.map(([t,ty]) => `<div class="grp">${t}</div>` + P.filter(p=>p.type===ty).map(p => `<button class="item ${p.id===selPort?'on':''}" data-id="${p.id}"><span class="sw ${p.type}" style="margin:0"></span><div class="m">${p.name}<span class="s">${p.sub || (p.type==='panel' ? `${keyCount(p)} keys` : p.type==='circuit' ? (p.dir==='in'?'Input':'Output') : p.type==='group' ? `${p.members.length} members` : '')}</span></div></button>`).join('')).join('');
+  }
+  const feeds = p => [...X.entries()].filter(([k,v]) => k.endsWith('>'+p.id) && v.gate==='always' && !p.keys.some(kk => kk[0]===k.split('>')[0] && kk[1]==='talkListen')).map(([k]) => byId[k.split('>')[0]]);
+  function previewHTML(p) {
+    return `<div class="pt"><span>● Stage A</span><span class="num">19:42</span></div><div class="pn">${p.name}</div><div class="pg">${p.keys.map(([d,fn]) => { const t = byId[d]; return `<div class="pkey ${t.type} ${live.has(p.id+'>'+d)?'hot':''}"><div class="n">${t.name}</div><div class="s">${fn==='listen'?'Listen':t.sub||''}</div></div>`; }).join('')}<div class="pkey reply"><div class="n dim">Reply</div><div class="s">Nobody yet</div></div></div>${feeds(p).length?`<div class="cap">Also hearing: ${feeds(p).map(f=>f.name).join(', ')}</div>`:''}<div class="cap">What they see on their phone</div>`;
+  }
+  function memberRows(p) { // conference / ifb: its column and row as members
+    const ins = [...X.entries()].filter(([k]) => k.endsWith('>'+p.id)).map(([k,v]) => [byId[k.split('>')[0]], v, 'in']);
+    const outs = [...X.entries()].filter(([k]) => k.startsWith(p.id+'>')).map(([k,v]) => [byId[k.split('>')[1]], v, 'out']);
+    const all = new Map(); ins.forEach(([q,v]) => all.set(q.id, {q, in:v})); outs.forEach(([q,v]) => { const e = all.get(q.id)||{q}; e.out=v; all.set(q.id,e); });
+    return [...all.values()];
+  }
+  function renderPortEditor() {
+    const p = byId[selPort]; if (!p) return;
+    let body = '';
+    if (p.type==='panel') body = `
+      <section class="blk"><h3>Picking the pack</h3><div class="fields">
+        <div class="field"><label>PIN</label><input class="in num" value="${p.id==='dir'?'1234':''}" placeholder="None" style="width:120px"><div class="help">Without one, anyone on the network can pick this panel.</div></div>
+        <div class="field"><label>Starting volume</label><input class="in num" value="80" style="width:100px"><div class="help">They can change it. Remembered per panel.</div></div>
+        <div class="field"><label>Reply key</label><select class="sel"><option ${p.replyMode==='ptt'?'selected':''}>Hold</option><option ${p.replyMode==='latch'?'selected':''}>Tap</option><option ${p.replyMode==='auto'?'selected':''}>Tap/hold</option></select><div class="help">How Reply behaves on this panel. It talks back to whoever last called.</div></div>
+      </div></section>
+      <section class="blk"><h3>Keys <span class="dim" style="font-weight:400">${p.keys.length} of 6</span></h3><div class="keys-wrap"><div>
+        <table class="tbl"><thead><tr><th style="width:28px">#</th><th>Talks to</th><th>Function</th><th>Behaviour</th><th style="width:96px"></th></tr></thead><tbody>
+        ${p.keys.map(([d,fn,mode],i) => { const t = byId[d]; return `<tr><td class="dim num">${i+1}</td><td><span class="sw ${t.type}"></span>${t.name} <span class="dim">${TYPE[t.type]}</span></td><td><select class="sel"><option ${fn==='talk'?'selected':''}>Talk</option><option ${fn==='listen'?'selected':''}>Listen</option><option ${fn==='talkListen'?'selected':''}>Talk + listen</option></select></td><td><select class="sel"><option ${mode==='ptt'?'selected':''}>Hold</option><option ${mode==='latch'?'selected':''}>Tap</option><option ${mode==='auto'?'selected':''}>Tap/hold</option></select></td><td class="rowact"><button aria-label="Move up" ${i===0?'disabled':''}>↑</button><button aria-label="Move down" ${i===p.keys.length-1?'disabled':''}>↓</button><button aria-label="Remove">×</button></td></tr>`; }).join('')}
+        </tbody></table>
+        <div style="margin-top:12px;display:flex;gap:12px;align-items:center"><button class="btn" ${p.keys.length>=6?'disabled':''}>Add key</button><span class="dim">${p.keys.length>=6?'All six keys are used.':'A key can talk to a conference, a person, a group, an IFB or a 4-wire out.'}</span></div>
+        <h3 style="margin:22px 0 8px;font-size:14px;color:var(--fg-2)">Also hearing (no key)</h3>
+        <div class="chips">${feeds(p).map(f => `<span class="chipx"><span class="sw ${f.type}" style="margin:0"></span>${f.name}<span class="cell L">L</span><button aria-label="Remove">×</button></span>`).join('') || '<span class="dim">Nothing yet. Set a cell to Listens in the matrix.</span>'}</div>
+      </div><div class="preview">${previewHTML(p)}</div></div></section>`;
+    if (p.type==='conference' || p.type==='ifb') body = `
+      ${p.type==='ifb' ? `<section class="blk"><h3>Dim</h3><div class="fields"><div class="field"><label>Program is dimmed by</label><select class="sel" style="width:160px"><option>−10 dB</option><option selected>−15 dB</option><option>−20 dB</option><option>Cut</option></select><div class="help">While any talk key into this IFB is down.</div></div></div></section>` : ''}
+      <section class="blk"><h3>${p.type==='ifb' ? 'Program, interrupts and output' : 'Members'}</h3>
+        <table class="tbl"><thead><tr><th>Port</th><th>${p.type==='ifb'?'Role':'Talks in'}</th><th>${p.type==='ifb'?'Fed by it':'Hears it'}</th><th>Level</th><th style="width:40px"></th></tr></thead><tbody>
+        ${memberRows(p).map(({q,in:i,out:o}) => `<tr><td><span class="sw ${q.type}"></span>${q.name} <span class="dim">${TYPE[q.type]}</span></td><td>${i ? `<span class="cell ${p.type==='ifb' ? (i.gate==='key'?'T':'P') : (i.gate==='key'?'T':'A')}">${p.type==='ifb' ? (i.gate==='key'?'Interrupt':'Program') : (i.gate==='key'?'Key':'Always')}</span>` : '<span class="dim">–</span>'}</td><td>${o ? '<span class="cell L">L</span>' : '<span class="dim">–</span>'}</td><td class="num">${fmtdb((i||o||{}).level||0)}</td><td class="rowact"><button aria-label="Remove">×</button></td></tr>`).join('')}
+        </tbody></table>
+        <div style="display:flex;gap:12px;align-items:center"><select class="sel" style="width:220px"><option>Add a port…</option>${P.filter(q=>q.id!==p.id && !memberRows(p).some(m=>m.q.id===q.id)).map(q=>`<option>${q.name}</option>`).join('')}</select><span class="dim">This is the port's row and column of the matrix.</span></div>
+      </section>`;
+    if (p.type==='group') body = `<section class="blk"><h3>Members</h3><div class="chips">${p.members.map(m => `<span class="chipx">${byId[m].name}<button aria-label="Remove">×</button></span>`).join('')}<select class="sel" style="width:170px;height:32px"><option>Add a port…</option></select></div><div class="help dim">A key that talks to this group reaches every member at once. Members do not hear each other through it. Panels and outputs only.</div></section>
+      <section class="blk"><h3>Who can call it</h3><div class="chips">${[...X.keys()].filter(k=>k.endsWith('>'+p.id)).map(k=>`<span class="chipx">${byId[k.split('>')[0]].name}<span class="cell T">T</span></span>`).join('')||'<span class="dim">Nobody yet.</span>'}</div></section>`;
+    if (p.type==='circuit') { const n = NODES.find(n=>n.id===p.node); body = `<section class="blk"><h3>Hardware</h3><div class="fields">
+        <div class="field"><label>Node</label><input class="in" value="${n.name} (${n.device})" readonly></div>
+        <div class="field"><label>Channel</label><input class="in" value="${p.dir==='in'?'Input':'Output'} ${p.idx}" readonly></div>
+        <div class="field"><label>Pair name</label><input class="in" value="${n.pairs[p.idx]||''}" placeholder="e.g. Truck"><div class="help">An in and an out with the same pair name show as "Truck in" and "Truck out".</div></div>
+        <div class="field"><label>Trim</label><div style="display:flex;align-items:center;gap:10px"><input type="range" min="-24" max="24" step="0.5" value="${p.trim}" style="flex:1"><b class="num">${fmtdb(p.trim)}</b></div></div>
+      </div></section>
+      <section class="blk"><h3>${p.dir==='in'?'Feeds':'Hears'}</h3><div class="chips">${[...X.keys()].filter(k => p.dir==='in' ? k.startsWith(p.id+'>') : k.endsWith('>'+p.id)).map(k => { const o = byId[p.dir==='in'?k.split('>')[1]:k.split('>')[0]]; return `<span class="chipx"><span class="sw ${o.type}" style="margin:0"></span>${o.name}<span class="cell ${p.dir==='in'?'A':'L'}">${p.dir==='in'?'A':'L'}</span></span>`; }).join('')||'<span class="dim">Not routed yet.</span>'}</div></section>`; }
+    $('#port-editor').innerHTML = `<div class="ed-head"><div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0"><span class="sw ${p.type}" style="height:22px"></span><input class="name-in" value="${p.name}" aria-label="Name"></div><span class="badge">${TYPE[p.type]}${p.type==='circuit'?', '+(p.dir==='in'?'input':'output'):''}</span>${p.type==='panel'?`<span class="muted" style="font-size:13.5px"><span class="dot ${p.online?'':'off'}"></span> ${p.online?'Online, iPhone, Safari':'Offline'}</span>`:''}</div>
+      <section class="blk"><div class="fields"><div class="field"><label>Sub text</label><input class="in" value="${p.sub||''}" placeholder="Optional"><div class="help">Shown small under the heading on keys that talk to this port.</div></div></div></section>
+      ${body}
+      <div style="display:flex;gap:6px;align-items:center;border-top:1px solid var(--line);padding-top:14px"><span class="dim">Changes save as you make them.</span><span style="flex:1"></span><button class="btn quiet" style="color:#FF7B84">Remove port</button></div>`;
+  }
+  function renderPorts() { renderPortList(); renderPortEditor(); }
+  $('#port-list').addEventListener('click', e => { const b = e.target.closest('.item'); if (b) { selPort = b.dataset.id; renderPorts(); } });
+
+  // ---------- hardware ----------
+  function renderHW() {
+    $('#hw').innerHTML = NODES.map(n => `<div class="card">
+      <div class="ch"><b>${n.name}</b><span class="muted" style="font-size:13.5px"><span class="dot ${n.online?'':'off'}"></span> ${n.online?'Online':'Offline'}</span></div>
+      <div class="dim" style="font-size:13px">${n.device} · <span class="num">${n.ip}</span> · ${n.ins} in, ${n.outs} out</div>
+      <div class="circ"><span class="hd">Use</span><span class="hd">Circuit</span><span class="hd">Pair</span><span class="hd">Trim</span>
+      ${Array.from({length:n.ins},(_,i)=>i+1).map(i => { const on = n.use.in.includes(i); return `<input type="checkbox" ${on?'checked':''} aria-label="Use input ${i}"><input class="nm" value="${on?circName(n,'in',i):`Input ${i}`}" ${on?'':'disabled'}><input class="nm" value="${n.pairs[i]||''}" placeholder="–" style="width:90px" ${on?'':'disabled'}><span class="trim num">${on?'0 dB':''}</span>`; }).join('')}
+      ${Array.from({length:n.outs},(_,i)=>i+1).map(i => { const on = n.use.out.includes(i); return `<input type="checkbox" ${on?'checked':''} aria-label="Use output ${i}"><input class="nm" value="${on?circName(n,'out',i):`Output ${i}`}" ${on?'':'disabled'}><input class="nm" value="${n.pairs[i]||''}" placeholder="–" style="width:90px" ${on?'':'disabled'}><span class="trim num">${on?'0 dB':''}</span>`; }).join('')}
+      </div>
+      <div class="dim" style="font-size:12.5px">Ticked channels become circuit ports in the matrix. Changing the set reconnects this node for a moment; changing routes does not.</div>
+    </div>`).join('') + `<div class="card" style="border-style:dashed;justify-content:center;color:var(--fg-3);font-size:13.5px">Nothing to pair. A node given this gateway's address registers itself and appears here.</div>`;
+  }
+
+  // ---------- live rail ----------
+  function renderRail() {
+    const a = [];
+    P.filter(p=>p.type==='panel'&&!p.keys.length).forEach(p => a.push([`${p.name} has no keys`,'They can pick the panel but there is nothing on it.']));
+    P.filter(p=>p.type==='conference'&&![...X.keys()].some(k=>k.endsWith('>'+p.id))).forEach(p => a.push([`${p.name} has no talker`,'Nobody and nothing is routed into it.']));
+    P.filter(p=>p.type==='ifb').forEach(p => { if (![...X.entries()].some(([k,v])=>k.endsWith('>'+p.id)&&v.gate==='always')) a.push([`${p.name} has no program`,'Set a source to Program in its column.']); if (![...X.keys()].some(k=>k.startsWith(p.id+'>'))) a.push([`${p.name} goes nowhere`,'Route it to a panel or an output.']); });
+    P.filter(p=>p.type==='group'&&!p.members.length).forEach(p => a.push([`${p.name} has no members`,'']));
+    if (!NODES.every(n=>n.online)) a.push(['A node is offline','']);
+    $('#attn-n').textContent = a.length; $('#attn-n').hidden = !a.length;
+    $('#attn').innerHTML = a.length ? a.map(([t,s]) => `<div class="it"><span class="dot" style="background:var(--warn)"></span><div>${t}<small>${s}</small></div></div>`).join('') : '<div class="empty">Nothing right now.</div>';
+    const t = [...live].filter(k=>k.includes('>')).map(k => k.split('>')).map(([s,d]) => `<div class="talker"><div>${byId[s].name}<div class="c">→ ${byId[d].name}${byId[s].type==='circuit'?', always':''}</div></div><span class="dim num">12s</span></div>`);
+    $('#talkers').innerHTML = t.join('') || '<div class="empty">Nobody is keyed.</div>';
+    $('#n-live').innerHTML = `<span class="badge hot">${[...live].filter(k=>byId[k.split('>')[0]]?.type==='panel').length}</span>`;
+  }
+
+  // ---------- phone ----------
+  let caller = null, holding = false;
+  function renderPhone() {
+    const p = byId.dir;
+    $('#phone').innerHTML = `<div class="top"><span class="dot"></span><span>Stage A</span><span style="flex:1"></span><span class="num">19:42</span><span>⋯</span></div>
+      <div class="packrow"><span class="name">${p.name}</span><span style="color:var(--pl)">Levels</span></div>
+      <div class="grid">${p.keys.map(([d,fn]) => { const t = byId[d]; const hot = holding && d==='show'; return `<div class="key ${t.type} ${fn==='listen'?'listen':''} ${hot?'hot':''}"><div class="cap">${t.name}</div><div class="full">${fn==='listen'?'Listen':t.sub||''}</div><div class="who">${hot?'Talking':d==='show'&&live.has('sm>show')?'Priya':''}</div></div>`; }).join('')}</div>
+      <div class="reply ${caller?'on':''}"><div><div class="r1">${caller?`Reply to ${byId[caller].name}`:'Reply'}</div><div class="r2">${caller?'Hold to talk back':'Lights when someone calls you'}</div></div>${caller?'<span class="badge">Hold</span>':''}</div>
+      <div class="also">Also hearing: ${feeds(p).map(f=>f.name).join(', ')}</div>
+      <div class="dock"><div class="mic">Mic on</div><div style="flex:1"><div style="display:flex;justify-content:space-between"><span>Volume</span><b>80</b></div><div style="height:5px;border-radius:3px;background:linear-gradient(90deg,var(--fg-2) 80%,var(--line) 80%);margin-top:12px"></div></div></div>`;
+  }
+  $('#sim-call').addEventListener('click', () => { caller = 'sm'; renderPhone(); });
+  $('#sim-key').addEventListener('click', () => { holding = !holding; if (holding) live.add('dir>show'); else live.delete('dir>show'); renderPhone(); refreshMatrix(); renderRail(); });
+
+  // ---------- nav ----------
+  function go(tab) { document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(t => t.hidden = t.id !== 'tab-'+tab); }
+  $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) go(b.dataset.tab); });
+  function counts() { $('#n-ports').textContent = P.length; $('#n-hw').textContent = NODES.length; $('#gw-online').textContent = `${P.filter(p=>p.type==='panel'&&p.online).length} / ${P.filter(p=>p.type==='panel').length}`; }
+
+  refreshMatrix(); renderPorts(); renderHW(); renderRail(); renderPhone();
+})();
+</script>
+</body>
+</html>
