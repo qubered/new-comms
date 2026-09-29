@@ -47,3 +47,5 @@ export * from './routing.ts';
 export * from './migration.ts';
 export * from './demo.ts';
 export * from './showEvents.ts';
+
+export * from './liveRouting.ts';

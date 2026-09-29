@@ -1,4 +1,4 @@
-import { functionTarget, type Port, type Crosspoint, type PortLiveState, type Trigger } from "@comms/protocol";
+import { openCrosspoints, functionTarget, type Port, type Crosspoint, type PortLiveState, type Trigger } from "@comms/protocol";
 
 export const stationKeys = (station: Port) =>
   station.triggers
@@ -54,22 +54,8 @@ export function conferenceTalkers(
   live: Record<string, PortLiveState>,
   levels: Record<string, number>,
 ): { name: string; level: number }[] {
-  const open = (point: Crosspoint, allowOnCall = true): boolean => {
-    if (live[point.source]?.micOff) return false;
-    if (point.gate === "always") return true;
-    const { port, trigger } = point.gate;
-    const state = live[port];
-    switch (trigger.kind) {
-      case "key": return !!state?.keys[trigger.key];
-      case "reply": return !!state?.keys.reply;
-      case "vox": return !!state?.voxOpen;
-      case "onCall": return allowOnCall && crosspoints.some((call) =>
-        call.destination === port && call.role === "call" && open(call, false),
-      );
-    }
-  };
-  const ids = new Set(crosspoints.filter((point) =>
-    point.destination === conference.id && point.source !== station.id && open(point) &&
+  const ids = new Set(openCrosspoints({ ports, crosspoints, live }).filter((point) =>
+    point.destination === conference.id && point.source !== station.id &&
     live[point.source]?.connected &&
     // Standing microphones should not claim to be speaking during silence.
     (point.gate !== "always" || (levels[point.source] ?? 0) > 0.01),
