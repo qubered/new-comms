@@ -853,6 +853,1074 @@
       "minimum": -24,
       "maximum": 24,
       "description": "Gain in dB, -24 to +24."
+    },
+    "PortType": {
+      "title": "PortType",
+      "enum": [
+        "station",
+        "input",
+        "output",
+        "conference",
+        "group",
+        "ifb"
+      ]
+    },
+    "Vox": {
+      "title": "Vox",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "threshold": {
+          "type": "number",
+          "minimum": -100,
+          "maximum": 0
+        },
+        "attack": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "hang": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      },
+      "required": [
+        "threshold",
+        "attack",
+        "hang"
+      ]
+    },
+    "Function": {
+      "title": "Function",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fn": {
+              "const": "callToPort"
+            },
+            "to": {
+              "type": "string",
+              "minLength": 1
+            },
+            "level": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 24
+            }
+          },
+          "required": [
+            "fn",
+            "to"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fn": {
+              "const": "callToConference"
+            },
+            "conf": {
+              "type": "string",
+              "minLength": 1
+            },
+            "level": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 24
+            }
+          },
+          "required": [
+            "fn",
+            "conf"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fn": {
+              "const": "callToGroup"
+            },
+            "group": {
+              "type": "string",
+              "minLength": 1
+            },
+            "level": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 24
+            }
+          },
+          "required": [
+            "fn",
+            "group"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fn": {
+              "const": "callToIFB"
+            },
+            "ifb": {
+              "type": "string",
+              "minLength": 1
+            },
+            "level": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 24
+            }
+          },
+          "required": [
+            "fn",
+            "ifb"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fn": {
+              "const": "listenToPort"
+            },
+            "from": {
+              "type": "string",
+              "minLength": 1
+            },
+            "level": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 24
+            }
+          },
+          "required": [
+            "fn",
+            "from"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fn": {
+              "const": "routeAudio"
+            },
+            "from": {
+              "type": "string",
+              "minLength": 1
+            },
+            "to": {
+              "type": "string",
+              "minLength": 1
+            },
+            "level": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 24
+            }
+          },
+          "required": [
+            "fn",
+            "from",
+            "to"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fn": {
+              "const": "reply"
+            },
+            "level": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 24
+            }
+          },
+          "required": [
+            "fn"
+          ]
+        }
+      ]
+    },
+    "TriggerRef": {
+      "title": "TriggerRef",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "key"
+            },
+            "key": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6
+            }
+          },
+          "required": [
+            "kind",
+            "key"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "reply",
+                "vox",
+                "onCall"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "Trigger": {
+      "title": "Trigger",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "key"
+            },
+            "key": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6
+            },
+            "mode": {
+              "$ref": "#/$defs/KeyMode"
+            },
+            "functions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Function"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "functions",
+            "key"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "reply"
+            },
+            "mode": {
+              "$ref": "#/$defs/KeyMode"
+            },
+            "functions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Function"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "functions"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "always"
+            },
+            "functions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Function"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "functions"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "vox"
+            },
+            "functions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Function"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "functions"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "onCall"
+            },
+            "functions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Function"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "functions"
+          ]
+        }
+      ]
+    },
+    "StationSettings": {
+      "title": "StationSettings",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pin": {
+          "$ref": "#/$defs/Pin"
+        },
+        "masterVolume": {
+          "$ref": "#/$defs/Volume"
+        },
+        "volumes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Volume"
+          }
+        },
+        "replyMode": {
+          "$ref": "#/$defs/KeyMode"
+        }
+      },
+      "required": [
+        "masterVolume",
+        "volumes",
+        "replyMode"
+      ]
+    },
+    "PortHardware": {
+      "title": "PortHardware",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channel": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "shortName": {
+          "type": "string"
+        },
+        "trim": {
+          "$ref": "#/$defs/Trim"
+        }
+      },
+      "required": [
+        "nodeId",
+        "channel",
+        "trim"
+      ]
+    },
+    "Port": {
+      "title": "Port",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "alias": {
+          "type": "string"
+        },
+        "subtitle": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/PortType"
+        },
+        "hardware": {
+          "$ref": "#/$defs/PortHardware"
+        },
+        "station": {
+          "$ref": "#/$defs/StationSettings"
+        },
+        "vox": {
+          "$ref": "#/$defs/Vox"
+        },
+        "group": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "members": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "members"
+          ]
+        },
+        "ifb": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "program": {
+              "type": "string",
+              "minLength": 1
+            },
+            "destination": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dim": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "null means cut program completely during an interrupt."
+            }
+          },
+          "required": [
+            "program",
+            "destination",
+            "dim"
+          ]
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Trigger"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "label",
+        "type",
+        "triggers"
+      ]
+    },
+    "Gate": {
+      "title": "Gate",
+      "oneOf": [
+        {
+          "const": "always"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "port": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trigger": {
+              "$ref": "#/$defs/TriggerRef"
+            }
+          },
+          "required": [
+            "port",
+            "trigger"
+          ]
+        }
+      ]
+    },
+    "Crosspoint": {
+      "title": "Crosspoint",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1
+        },
+        "level": {
+          "type": "number",
+          "minimum": -100,
+          "maximum": 24
+        },
+        "gate": {
+          "$ref": "#/$defs/Gate"
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "triggerIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "functionIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "role": {
+          "enum": [
+            "audio",
+            "call",
+            "interrupt",
+            "program",
+            "reply"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "destination",
+        "level",
+        "gate",
+        "owner",
+        "role"
+      ]
+    },
+    "PortLiveState": {
+      "title": "PortLiveState",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "portId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "client": {
+          "type": "string"
+        },
+        "micOff": {
+          "type": "boolean"
+        },
+        "keys": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "voxOpen": {
+          "type": "boolean"
+        },
+        "incoming": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "lastCaller": {
+          "type": "string",
+          "minLength": 1
+        },
+        "volumes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Volume"
+          }
+        },
+        "masterVolume": {
+          "$ref": "#/$defs/Volume"
+        },
+        "audible": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "portId",
+        "connected",
+        "micOff",
+        "keys",
+        "voxOpen",
+        "incoming",
+        "volumes",
+        "masterVolume",
+        "audible"
+      ]
+    },
+    "NodeChannel": {
+      "title": "NodeChannel",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inUse": {
+          "type": "boolean"
+        },
+        "shortName": {
+          "type": "string"
+        },
+        "trim": {
+          "$ref": "#/$defs/Trim"
+        }
+      },
+      "required": [
+        "channel",
+        "name",
+        "inUse",
+        "trim"
+      ]
+    },
+    "Node": {
+      "title": "Node",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string"
+        },
+        "lastSeen": {
+          "type": "number"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NodeChannel"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NodeChannel"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "address",
+        "lastSeen",
+        "inputs",
+        "outputs"
+      ]
+    },
+    "Show": {
+      "title": "Show",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Port"
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Node"
+          }
+        }
+      },
+      "required": [
+        "version",
+        "name",
+        "ports",
+        "nodes"
+      ]
+    },
+    "PortWrite": {
+      "title": "PortWrite",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "alias": {
+          "type": "string"
+        },
+        "subtitle": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/PortType"
+        },
+        "hardware": {
+          "$ref": "#/$defs/PortHardware"
+        },
+        "station": {
+          "$ref": "#/$defs/StationSettings"
+        },
+        "vox": {
+          "$ref": "#/$defs/Vox"
+        },
+        "group": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "members": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "members"
+          ]
+        },
+        "ifb": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "program": {
+              "type": "string",
+              "minLength": 1
+            },
+            "destination": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dim": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "null means cut program completely during an interrupt."
+            }
+          },
+          "required": [
+            "program",
+            "destination",
+            "dim"
+          ]
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Trigger"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "triggers"
+      ]
+    },
+    "ShowSnapshot": {
+      "title": "ShowSnapshot",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rev": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Port"
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Node"
+          }
+        },
+        "crosspoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Crosspoint"
+          }
+        },
+        "live": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PortLiveState"
+          }
+        }
+      },
+      "required": [
+        "rev",
+        "name",
+        "ports",
+        "nodes",
+        "crosspoints",
+        "live"
+      ]
+    },
+    "PortPeerMessage": {
+      "title": "PortPeerMessage",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "key"
+            },
+            "key": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 6
+                },
+                {
+                  "const": "reply"
+                }
+              ]
+            },
+            "on": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "key",
+            "on"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "volume"
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1
+            },
+            "volume": {
+              "$ref": "#/$defs/Volume"
+            }
+          },
+          "required": [
+            "type",
+            "source",
+            "volume"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "on"
+          ],
+          "title": "MicOffMessage",
+          "properties": {
+            "type": {
+              "const": "micOff"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "volume"
+          ],
+          "title": "MasterVolumeMessage",
+          "properties": {
+            "type": {
+              "const": "masterVolume"
+            },
+            "volume": {
+              "$ref": "#/$defs/Volume"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "on"
+          ],
+          "title": "LoopbackMessage",
+          "description": "Test tool only: hear your own microphone back through the mixer, for round-trip latency measurement.",
+          "properties": {
+            "type": {
+              "const": "loopback"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "title": "PingMessage",
+          "description": "Heartbeat once a second; answered with a pong. Silence for a few seconds ends the session.",
+          "properties": {
+            "type": {
+              "const": "ping"
+            },
+            "hidden": {
+              "type": "boolean",
+              "description": "True while the tab is in the background (locked screen): the router waits longer before giving up on it."
+            }
+          }
+        }
+      ]
+    },
+    "PortSessionRequest": {
+      "title": "PortSessionRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "portId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pin": {
+          "$ref": "#/$defs/Pin"
+        },
+        "offer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "client": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "offer"
+      ]
+    },
+    "NodeWrite": {
+      "title": "NodeWrite",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NodeChannel"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NodeChannel"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "inputs",
+        "outputs"
+      ]
     }
   }
 }

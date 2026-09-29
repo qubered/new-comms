@@ -62,6 +62,120 @@ export type PeerMessage =
  * via the `definition` "PeerReply".
  */
 export type PeerReply = PeerState | DeviceMessage | PongMessage;
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "PortType".
+ */
+export type PortType = "station" | "input" | "output" | "conference" | "group" | "ifb";
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "Function".
+ */
+export type Function =
+  | {
+      fn: "callToPort";
+      to: string;
+      level?: number;
+    }
+  | {
+      fn: "callToConference";
+      conf: string;
+      level?: number;
+    }
+  | {
+      fn: "callToGroup";
+      group: string;
+      level?: number;
+    }
+  | {
+      fn: "callToIFB";
+      ifb: string;
+      level?: number;
+    }
+  | {
+      fn: "listenToPort";
+      from: string;
+      level?: number;
+    }
+  | {
+      fn: "routeAudio";
+      from: string;
+      to: string;
+      level?: number;
+    }
+  | {
+      fn: "reply";
+      level?: number;
+    };
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "TriggerRef".
+ */
+export type TriggerRef =
+  | {
+      kind: "key";
+      key: number;
+    }
+  | {
+      kind: "reply" | "vox" | "onCall";
+    };
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "Trigger".
+ */
+export type Trigger =
+  | {
+      kind: "key";
+      key: number;
+      mode?: KeyMode;
+      functions: Function[];
+    }
+  | {
+      kind: "reply";
+      mode?: KeyMode;
+      functions: Function[];
+    }
+  | {
+      kind: "always";
+      functions: Function[];
+    }
+  | {
+      kind: "vox";
+      functions: Function[];
+    }
+  | {
+      kind: "onCall";
+      functions: Function[];
+    };
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "Gate".
+ */
+export type Gate =
+  | "always"
+  | {
+      port: string;
+      trigger: TriggerRef;
+    };
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "PortPeerMessage".
+ */
+export type PortPeerMessage =
+  | {
+      type: "key";
+      key: number | "reply";
+      on: boolean;
+    }
+  | {
+      type: "volume";
+      source: string;
+      volume: Volume;
+    }
+  | MicOffMessage1
+  | MasterVolumeMessage1
+  | LoopbackMessage1
+  | PingMessage1;
 
 /**
  * Authoritative contracts for gateway, Talk, Manager and comms-node. TypeScript types are generated from this file (npm run generate -w @comms/protocol).
@@ -348,4 +462,215 @@ export interface NodeRegistration {
   availableInputs: string[];
   availableOutputs: string[];
   address: string;
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "Vox".
+ */
+export interface Vox {
+  threshold: number;
+  attack: number;
+  hang: number;
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "StationSettings".
+ */
+export interface StationSettings {
+  pin?: Pin;
+  masterVolume: Volume;
+  volumes: {
+    [k: string]: Volume;
+  };
+  replyMode: KeyMode;
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "PortHardware".
+ */
+export interface PortHardware {
+  nodeId: string;
+  channel: number;
+  shortName?: string;
+  trim: Trim;
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "Port".
+ */
+export interface Port {
+  id: string;
+  name: string;
+  label: string;
+  alias?: string;
+  subtitle?: string;
+  type: PortType;
+  hardware?: PortHardware;
+  station?: StationSettings;
+  vox?: Vox;
+  group?: {
+    members: string[];
+  };
+  ifb?: {
+    program: string;
+    destination: string;
+    /**
+     * null means cut program completely during an interrupt.
+     */
+    dim: number | null;
+  };
+  triggers: Trigger[];
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "Crosspoint".
+ */
+export interface Crosspoint {
+  source: string;
+  destination: string;
+  level: number;
+  gate: Gate;
+  owner: string;
+  triggerIndex?: number;
+  functionIndex?: number;
+  role: "audio" | "call" | "interrupt" | "program" | "reply";
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "PortLiveState".
+ */
+export interface PortLiveState {
+  portId: string;
+  connected: boolean;
+  client?: string;
+  micOff: boolean;
+  keys: {
+    [k: string]: boolean;
+  };
+  voxOpen: boolean;
+  incoming: string[];
+  lastCaller?: string;
+  volumes: {
+    [k: string]: Volume;
+  };
+  masterVolume: Volume;
+  audible: string[];
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "NodeChannel".
+ */
+export interface NodeChannel {
+  channel: number;
+  name: string;
+  inUse: boolean;
+  shortName?: string;
+  trim: Trim;
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "Node".
+ */
+export interface Node {
+  id: string;
+  name: string;
+  address: string;
+  lastSeen: number;
+  inputs: NodeChannel[];
+  outputs: NodeChannel[];
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "Show".
+ */
+export interface Show {
+  version: 2;
+  name: string;
+  ports: Port[];
+  nodes: Node[];
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "PortWrite".
+ */
+export interface PortWrite {
+  name: string;
+  label?: string;
+  alias?: string;
+  subtitle?: string;
+  type: PortType;
+  hardware?: PortHardware;
+  station?: StationSettings;
+  vox?: Vox;
+  group?: {
+    members: string[];
+  };
+  ifb?: {
+    program: string;
+    destination: string;
+    /**
+     * null means cut program completely during an interrupt.
+     */
+    dim: number | null;
+  };
+  triggers: Trigger[];
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "ShowSnapshot".
+ */
+export interface ShowSnapshot {
+  rev: number;
+  name: string;
+  ports: Port[];
+  nodes: Node[];
+  crosspoints: Crosspoint[];
+  live: {
+    [k: string]: PortLiveState;
+  };
+}
+export interface MicOffMessage1 {
+  type: "micOff";
+  on: boolean;
+}
+export interface MasterVolumeMessage1 {
+  type: "masterVolume";
+  volume: Volume;
+}
+/**
+ * Test tool only: hear your own microphone back through the mixer, for round-trip latency measurement.
+ */
+export interface LoopbackMessage1 {
+  type: "loopback";
+  on: boolean;
+}
+/**
+ * Heartbeat once a second; answered with a pong. Silence for a few seconds ends the session.
+ */
+export interface PingMessage1 {
+  type: "ping";
+  /**
+   * True while the tab is in the background (locked screen): the router waits longer before giving up on it.
+   */
+  hidden?: boolean;
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "PortSessionRequest".
+ */
+export interface PortSessionRequest {
+  portId?: string;
+  nodeId?: string;
+  pin?: Pin;
+  offer: string;
+  client?: string;
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "NodeWrite".
+ */
+export interface NodeWrite {
+  name: string;
+  inputs: NodeChannel[];
+  outputs: NodeChannel[];
 }
