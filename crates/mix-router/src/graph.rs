@@ -104,12 +104,14 @@ struct Port {
     loopback: bool,
     reply: Option<usize>,
 }
+struct Route { source: usize, edges: Vec<usize>, gain: f32 }
 struct Edge { source: usize, destination: usize, gain: f32, gate: Gate, role: String, open: bool }
 #[derive(Default)]
 pub struct Graph {
     ports: Vec<Port>,
     indices: HashMap<String, usize>,
     edges: Vec<Edge>,
+    routes: Vec<Vec<Route>>,
     calls: Vec<Vec<usize>>,
     previous_calls: Vec<Vec<usize>>,
     audible_sources: Vec<Vec<usize>>,
@@ -144,6 +146,12 @@ impl Graph {
             p
         }).collect();
         self.indices = indices;
+        self.routes = (0..self.ports.len()).map(|_|Vec::<Route>::new()).collect();
+        for (index, edge) in edges.iter().enumerate() {
+            let routes=&mut self.routes[edge.destination];
+            if let Some(route)=routes.iter_mut().find(|route|route.source==edge.source) {route.edges.push(index);}
+            else {routes.push(Route {source:edge.source,edges:vec![index],gain:0.0});}
+        }
         self.edges = edges;
         self.calls = vec![Vec::new(); self.ports.len()];
         self.previous_calls = self.calls.clone();
@@ -232,6 +240,18 @@ impl Graph {
                 self.edges[i].open=self.gate_open(&self.edges[i].gate,true) && !self.ports[self.edges[i].source].state.mic_off;
             }
         }
+        // Parallel functions retain their gates and roles, but each audio pair contributes once.
+        for (destination,routes) in self.routes.iter_mut().enumerate() {
+            let port=&self.ports[destination];
+            let interrupt=port.config.kind=="ifb" && routes.iter().any(|route|route.edges.iter().any(|&i|self.edges[i].open && self.edges[i].role!="program"));
+            let dim=if interrupt {port.config.ifb.as_ref().and_then(|i|i.dim).map_or(0.0,gain)} else {1.0};
+            for route in routes {
+                route.gain=route.edges.iter().filter_map(|&i| {
+                    let edge=&self.edges[i];
+                    edge.open.then_some(edge.gain * if edge.role=="program" {dim} else {1.0})
+                }).fold(0.0,f32::max);
+            }
+        }
         // Record second-pass call indicators after all gates are resolved, so they cannot chain.
         for e in &self.edges {
             if e.open && e.role == "call" && !self.calls[e.destination].contains(&e.source) { self.calls[e.destination].push(e.source); }
@@ -268,37 +288,34 @@ impl Graph {
         let p=&self.ports[source];
         if p.state.mic_off {return;}
         match p.config.kind.as_str() {
-            "conference" => {
-                for e in self.edges.iter().filter(|e|e.destination==source && e.open && e.source!=listener) {
-                    self.add_source(e.source,listener,frames,out,scale*e.gain,depth+1);
-                }
-            }
-            "ifb" => {
-                let interrupt=self.edges.iter().any(|e|e.destination==source && e.open && e.role!="program");
-                for e in self.edges.iter().filter(|e|e.destination==source && e.open) {
-                    let dim=if interrupt && e.role=="program" {p.config.ifb.as_ref().and_then(|i|i.dim).map_or(0.0,gain)} else {1.0};
-                    self.add_source(e.source,listener,frames,out,scale*dim*e.gain,depth+1);
+            "conference" | "ifb" => {
+                for route in &self.routes[source] {
+                    if p.config.kind=="conference" && route.source==listener {continue;}
+                    self.add_source(route.source,listener,frames,out,scale*route.gain,depth+1);
                 }
             }
             _ => if let Some(frame)=frames.get(&p.config.id) {for (sum,sample) in out.iter_mut().zip(frame) {*sum+=sample*scale;}},
         }
     }
+    fn reply_gain(&self, source:usize, listener:usize) -> f32 {
+        let port=&self.ports[source];
+        if port.reply!=Some(listener) || port.state.mic_off || !port.state.keys.get("reply").copied().unwrap_or(false) {return 0.0;}
+        let level=port.config.triggers.iter().find(|t|t.kind=="reply").and_then(|t|t.functions.first()).and_then(|f|f.get("level")).and_then(|v|v.as_f64()).unwrap_or(0.0) as f32;
+        gain(level)
+    }
     pub fn mix_for(&self, id: &str, frames: &HashMap<String,[f32;FRAME]>, out: &mut [f32;FRAME]) {
         out.fill(0.0);
         let Some(&listener)=self.indices.get(id) else { return };
         let p=&self.ports[listener];
-        for e in self.edges.iter().filter(|e|e.destination==listener && e.open) {
-            let volume=p.state.volumes.get(&self.ports[e.source].config.id).copied().unwrap_or(100.0)/100.0;
-            self.add_source(e.source,listener,frames,out,e.gain*volume,0);
+        for route in &self.routes[listener] {
+            let volume=p.state.volumes.get(&self.ports[route.source].config.id).copied().unwrap_or(100.0)/100.0;
+            let effective=route.gain.max(self.reply_gain(route.source,listener));
+            self.add_source(route.source,listener,frames,out,effective*volume,0);
         }
-        for source in &self.ports {
-            if source.reply==Some(listener) && !source.state.mic_off && source.state.keys.get("reply").copied().unwrap_or(false) {
-                if let Some(frame)=frames.get(&source.config.id) {
-                    let level=source.config.triggers.iter().find(|t|t.kind=="reply").and_then(|t|t.functions.first()).and_then(|f|f.get("level")).and_then(|v|v.as_f64()).unwrap_or(0.0) as f32;
-                    let volume=p.state.volumes.get(&source.config.id).copied().unwrap_or(100.0)/100.0;
-                    for (sum,sample) in out.iter_mut().zip(frame) { *sum+=sample*gain(level)*volume; }
-                }
-            }
+        for (source,port) in self.ports.iter().enumerate() {
+            if self.routes[listener].iter().any(|route|route.source==source) {continue;}
+            let volume=p.state.volumes.get(&port.config.id).copied().unwrap_or(100.0)/100.0;
+            self.add_source(source,listener,frames,out,self.reply_gain(source,listener)*volume,0);
         }
         if p.loopback { if let Some(frame)=frames.get(id) { for (sum,sample) in out.iter_mut().zip(frame) { *sum+=sample; } } }
         let master=p.state.master_volume/100.0*p.config.hardware.as_ref().map_or(1.0,|h|gain(h.trim));
@@ -437,7 +454,7 @@ mod tests {
         ]);
         let f=frames(&[("a",0.1),("mic",0.2)]);g.prepare(&f);
         for key in [json!(1),json!(2),json!("reply")] {g.apply("a",Message::Key{key,on:true});}
-        g.prepare(&f);assert!((heard(&g,"b",&f)-0.3).abs()<1e-6);
+        g.prepare(&f);assert!((heard(&g,"b",&f)-0.1).abs()<1e-6);
         g.apply("a",Message::MicOff{on:true});g.prepare(&f);
         assert_eq!(heard(&g,"b",&f),0.0);assert!(g.state("a").unwrap().keys.values().all(|on|!*on));
         for key in [json!(1),json!(2),json!("reply")] {g.apply("a",Message::Key{key,on:true});}
@@ -445,6 +462,32 @@ mod tests {
         g.apply("a",Message::MicOff{on:false});g.prepare(&f);
         assert_eq!(heard(&g,"b",&f),0.0,"muted presses must not arm a call for unmute");
         press(&mut g,"a",true);g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.1);
+    }
+
+    #[test]
+    fn parallel_routes_take_highest_open_gain_instead_of_summing() {
+        let mut quiet=edge("a","b",json!("always"),"audio");quiet["level"]=json!(-6.0);
+        let mut g=setup(vec![config("a","station"),config("b","station")],vec![quiet,edge("a","b",key("a"),"call"),edge("b","a",json!("always"),"call")]);
+        let f=frames(&[("a",0.2)]);g.prepare(&f);
+        assert!((heard(&g,"b",&f)-0.2*gain(-6.0)).abs()<1e-6);
+        press(&mut g,"a",true);g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.2);
+        g.apply("a",Message::Key{key:json!("reply"),on:true});g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.2,"Reply overlaps the existing pair");
+        press(&mut g,"a",false);g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.2);
+        g.apply("a",Message::Key{key:json!("reply"),on:false});g.prepare(&f);
+        assert!((heard(&g,"b",&f)-0.2*gain(-6.0)).abs()<1e-6);
+    }
+    #[test]
+    fn duplicate_bus_contributions_and_ifb_monitor_do_not_amplify() {
+        let mut ifb=config("ifb","ifb");ifb["ifb"]=json!({"dim":-20.0});
+        let mut g=setup(vec![config("a","station"),config("b","station"),config("mic","input"),config("show","conference"),ifb],vec![
+            edge("mic","show",json!("always"),"audio"),edge("mic","show",key("a"),"audio"),
+            edge("show","ifb",json!("always"),"program"),edge("show","ifb",json!("always"),"program"),
+            edge("a","ifb",key("a"),"interrupt"),edge("a","ifb",key("a"),"interrupt"),
+            edge("ifb","b",json!("always"),"audio"),edge("ifb","b",key("a"),"audio")
+        ]);
+        let f=frames(&[("a",0.1),("mic",0.2)]);g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.2);
+        press(&mut g,"a",true);g.prepare(&f);assert!((heard(&g,"b",&f)-0.12).abs()<1e-6);
+        assert_eq!(g.edges.len(),8,"individual function metadata is retained");
     }
 
 }
