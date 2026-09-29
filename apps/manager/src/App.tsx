@@ -14,7 +14,7 @@ export function App() {
   const [pack, setPack] = useState<string>();
   const [channel, setChannel] = useState<string>();
   const [error, setError] = useState<string>();
-  const [health, setHealth] = useState<{ mixer: boolean }>();
+  const [health, setHealth] = useState<Awaited<ReturnType<typeof api.health>>>();
 
   useEffect(() => {
     const check = () => api.health().then(setHealth).catch(() => setHealth(undefined));
@@ -75,7 +75,9 @@ export function App() {
           </div>
           <div className="r">
             <span>Mixer</span>
-            <span className="num">{health ? (health.mixer ? "OK" : "Down") : "Unknown"}</span>
+            <span className="num">
+              {health ? (health.mixer ? `OK${health.mixerStats ? `, ${(health.mixerStats.tickAvgUs / 1000).toFixed(2)} ms` : ""}` : "Down") : "Unknown"}
+            </span>
           </div>
           <div className="r">
             <span>Online</span>

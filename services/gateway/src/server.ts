@@ -64,6 +64,7 @@ export function buildServer(
   app.get("/api/v1/health", async () => ({
     ok: true,
     mixer: gateway.router.ready,
+    mixerStats: gateway.mixerStats ?? null,
     rev: gateway.rev,
     online: [...gateway.live.values()].filter((live) => live.connected).length,
   }));

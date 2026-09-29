@@ -146,10 +146,27 @@ function Editor({
         </div>
         <span className="status">
           <span className={`dot${online ? "" : " off"}`} />
-          {online ? `Online${state?.client ? `, ${state.client}` : ""}${hardware && pack.device ? `, ${pack.device.address}` : ""}` : `Offline${hardware ? `, last seen ${relativeTime(pack.device?.lastSeen)}` : ""}`}
+          {online ? `Online${state?.client ? `, ${state.client}` : ""}${hardware && pack.device ? `, ${pack.device.address}` : ""}` : `Offline${hardware && pack.device ? `, last seen ${relativeTime(pack.device.lastSeen)}` : ""}`}
         </span>
-        <span className="badge">{hardware ? "Hardware node" : "Person"}</span>
+        <div className="seg" role="group" aria-label="Type">
+          {(["human", "hardware"] as const).map((type) => (
+            <button
+              key={type}
+              className={pack.type === type ? "on" : ""}
+              disabled={Boolean(pack.device) && pack.type !== type}
+              title={pack.device && pack.type !== type ? "This pack belongs to a registered node" : undefined}
+              onClick={() => pack.type !== type && void guard(api.updatePack(pack.id, { type }))}
+            >
+              {type === "human" ? "Person" : "Hardware node"}
+            </button>
+          ))}
+        </div>
       </div>
+      {hardware && !pack.device && (
+        <div className="offline-note">
+          Waiting for a node. Start comms-node with <b>--name "{pack.name}"</b> and it takes over this pack, keeping its channel.
+        </div>
+      )}
 
       {hardware ? (
         <section className="blk">

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { PublicPack } from "@comms/protocol";
 import { useServerState } from "@comms/protocol/react";
 import { Intercom } from "./intercom.ts";
+import { Latency } from "./Latency.tsx";
 import { PackPicker } from "./PackPicker.tsx";
 import { PinPad } from "./PinPad.tsx";
 import { TalkScreen } from "./TalkScreen.tsx";
@@ -37,7 +38,22 @@ export function App() {
     setView({ screen: "talk", packId: pack.id, intercom });
   };
 
+  const [hash, setHash] = useState(location.hash);
+  useEffect(() => {
+    const listener = () => setHash(location.hash);
+    window.addEventListener("hashchange", listener);
+    return () => window.removeEventListener("hashchange", listener);
+  }, []);
+
   const pack = view.screen === "pick" ? undefined : state?.packs.find((p) => p.id === view.packId);
+
+  if (hash === "#latency") {
+    return (
+      <div className="phone">
+        <Latency packs={state?.packs ?? []} onBack={() => (location.hash = "")} />
+      </div>
+    );
+  }
 
   return (
     <div className="phone">
@@ -52,6 +68,8 @@ export function App() {
         />
       ) : view.screen === "pin" ? (
         <PinPad
+          systemName={state.name}
+          online={online}
           packName={pack.name}
           verify={async (pin) => (await fetch(`/api/v1/packs/${pack.id}/pin`, {
             method: "POST",

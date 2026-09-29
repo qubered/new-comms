@@ -48,7 +48,7 @@ export type ServerEvent = SnapshotEvent | ConfigEvent | LiveEvent | LevelsEvent;
  * via the `definition` "PeerMessage".
  */
 export type PeerMessage =
-  KeyMessage | MicOffMessage | VolumeMessage | MasterVolumeMessage | PgmListenMessage | PingMessage;
+  KeyMessage | MicOffMessage | VolumeMessage | MasterVolumeMessage | PgmListenMessage | LoopbackMessage | PingMessage;
 /**
  * Data-channel messages, mix-router -> peer.
  *
@@ -243,6 +243,13 @@ export interface MasterVolumeMessage {
 export interface PgmListenMessage {
   type: "pgmListen";
   channelId: string;
+  on: boolean;
+}
+/**
+ * Test tool only: hear your own microphone back through the mixer, for round-trip latency measurement.
+ */
+export interface LoopbackMessage {
+  type: "loopback";
   on: boolean;
 }
 /**

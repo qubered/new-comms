@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 export function useClock(): string {
   const format = () => {
@@ -13,17 +13,52 @@ export function useClock(): string {
   return time;
 }
 
-export function TopBar({ tone, text, children }: { tone: "" | "wait" | "warn"; text: string; children?: ReactNode }) {
+export interface MenuItem {
+  label: string;
+  onClick(): void;
+}
+
+/** The chrome every screen shares: connection dot, system name, time, menu. */
+export function TopBar({ tone, text, title, items }: { tone: "" | "wait" | "warn"; text: string; title?: string; items: MenuItem[] }) {
   const time = useClock();
+  const [open, setOpen] = useState(false);
   return (
-    <div className="top">
-      <div className={`st ${tone}`}>
-        <span className="dot" />
-        <span>{text}</span>
+    <>
+      <div className="top">
+        <div className={`st ${tone}`}>
+          <span className="dot" />
+          <span>{text}</span>
+        </div>
+        <span className="sp" />
+        <span className="num">{time}</span>
+        <button className="gear" aria-label="Menu" onClick={() => setOpen(true)}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="5" cy="12" r="1.4" />
+            <circle cx="12" cy="12" r="1.4" />
+            <circle cx="19" cy="12" r="1.4" />
+          </svg>
+        </button>
       </div>
-      <span className="sp" />
-      <span className="num">{time}</span>
-      {children}
-    </div>
+      <div className={`sheet${open ? " on" : ""}`} onClick={(event) => event.target === event.currentTarget && setOpen(false)}>
+        <div className="card">
+          {title && <h2>{title}</h2>}
+          {items.map((item) => (
+            <button
+              key={item.label}
+              className="btn"
+              onClick={() => {
+                setOpen(false);
+                item.onClick();
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+          <button className="btn" onClick={() => setOpen(false)}>
+            Close
+          </button>
+        </div>
+      </div>
+    </>
   );
 }

@@ -52,7 +52,7 @@ cargo run --release -p comms-node -- --list                       # see devices
 npm run node -- --gateway http://<computer-ip>:8080 --name "Stage rack" --device "Scarlett 18i20"
 ```
 
-It appears in Manager → Hardware. Pick its input and output there (pushed to the node over its data channel, applied without reconnecting) and put its pack on a
+It appears in Manager → Hardware. You can also create a hardware pack there first (Packs → New pack → Hardware node); a node started with the same `--name` claims it and keeps its channel. Pick its input and output there (pushed to the node over its data channel, applied without reconnecting) and put its pack on a
 channel: on a partyline or direct line it is always keyed; on a PGM channel it is the feed.
 Devices must support 48 kHz.
 
@@ -67,13 +67,27 @@ npm run smoke            # real mix-router, three WebRTC clients over loopback U
 
 ## Latency
 
-- **Mixer floor, measured** (`npm run smoke`, loopback): impulse in on one client, out of
-  another, p50 about 20 ms (roughly 15 to 25 ms), including 10 ms Opus framing. Everything else
-  is WiFi and the browser's audio stack.
-- **Mic-to-ear, still to measure on real phones** (target under 150 ms). Procedure: two
-  phones in a quiet room, both on the same partyline, A keyed. Put both phones close to a
-  recorder, clap next to A, and read the offset between the clap and its echo from B in the
-  waveform. Repeat about 20 times, note p50 and worst case.
+Target: under 150 ms mic-to-ear on LAN WiFi. Three measurements, from the inside out:
+
+- **Mixer alone** (`npm run smoke`, loopback): impulse in on one client, out of another,
+  roughly 15 to 30 ms at p50 depending on machine load, including 10 ms Opus framing. The
+  smoke test also reports the mixer's own time per 10 ms cycle (Manager footer shows it live).
+- **Software round trip** (Talk menu → Latency test, or open `/#latency`): a quiet tone with a
+  loud marker goes up as a pack's microphone, the mixer plays it straight back, and the page
+  times the marker on a single sample-accurate audio clock. It covers Chrome's encoder, the
+  network, mix-router and the browser's jitter buffer and decoder, and it needs no real
+  microphone or speaker. Measured in Chrome on the same machine (so no WiFi): **83 to 103 ms
+  round trip, about 50 ms one way, 20 of 20 markers heard.** Run it from a phone on WiFi to
+  see the real network add its share.
+- **Mic-to-ear, full**: needs hardware, so it is still a manual clap test. Two phones in a
+  quiet room, both on the same partyline, A keyed. Put both close to a recorder, clap next
+  to A, and read the offset between the clap and its echo from B in the waveform. Repeat
+  about 20 times; note p50 and worst case. A real mic and speaker typically add 20 to 60 ms
+  on top of the software figure.
+
+Chrome stops sending during silence, and the mixer waits for two frames (20 ms) before it
+starts playing a peer after a gap, so the first syllable after silence arrives slightly later
+than steady-state speech. That is why the latency test keeps a carrier running.
 
 ## Process layout
 

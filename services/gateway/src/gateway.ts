@@ -36,6 +36,8 @@ export class Gateway extends EventEmitter {
   rev = 1;
   live = new Map<string, PackLiveState>();
   levels: Record<string, number> = {};
+  /** Latest mixer health from mix-router: time per 10 ms cycle, in microseconds. */
+  mixerStats?: { tickAvgUs: number; tickMaxUs: number; peers: number };
   /** session id -> pack id */
   sessions = new Map<string, string>();
 
@@ -108,6 +110,7 @@ export class Gateway extends EventEmitter {
       if (current?.connected) this.setLive({ ...current, connected: false, keyed: {}, client: undefined });
     }
     this.sessions.clear();
+    this.mixerStats = undefined;
   }
 
   private onRouter(event: RouterEvent): void {
@@ -154,6 +157,9 @@ export class Gateway extends EventEmitter {
         });
         break;
       }
+      case "stats":
+        this.mixerStats = { tickAvgUs: event.tickAvgUs, tickMaxUs: event.tickMaxUs, peers: event.peers };
+        break;
       case "levels":
         this.levels = event.levels;
         this.broadcast({ type: "levels", levels: event.levels });
@@ -207,6 +213,8 @@ export class Gateway extends EventEmitter {
     });
   }
 
+  private static readonly ONE_KEY = "A hardware pack bridges one channel";
+
   private checkPin(pin: unknown): string | undefined {
     if (pin === undefined || pin === null || pin === "") return undefined;
     if (typeof pin !== "string" || !/^\d{4}$/.test(pin)) throw new HttpError(400, "PIN must be four digits");
@@ -229,8 +237,9 @@ export class Gateway extends EventEmitter {
       masterVolume: clamp(Number(body.masterVolume ?? 80)),
       keys: body.keys ? this.keysFrom(body.keys) : [],
     };
+    if (pack.type === "hardware" && pack.keys.length > 1) throw new HttpError(400, Gateway.ONE_KEY);
     const pin = this.checkPin(body.pin);
-    if (pin) pack.pin = pin;
+    if (pin && pack.type === "human") pack.pin = pin;
     this.packs.push(pack);
     this.pushConfig();
     return pack;
@@ -243,13 +252,25 @@ export class Gateway extends EventEmitter {
       if (!body.name.trim()) throw new HttpError(400, "name is required");
       pack.name = body.name.trim();
     }
+    if (body.type !== undefined && body.type !== pack.type) {
+      if (pack.device) throw new HttpError(409, "This pack belongs to a registered node; remove the node to change its type");
+      if (body.type === "hardware") {
+        pack.keys = pack.keys.slice(0, 1);
+        delete pack.pin;
+      }
+      pack.type = body.type;
+    }
     if (body.masterVolume !== undefined) pack.masterVolume = clamp(Number(body.masterVolume));
-    if ("pin" in body) {
+    if ("pin" in body && pack.type === "human") {
       const pin = this.checkPin(body.pin);
       if (pin) pack.pin = pin;
       else delete pack.pin;
     }
-    if (body.keys !== undefined) pack.keys = this.keysFrom(body.keys);
+    if (body.keys !== undefined) {
+      const keys = this.keysFrom(body.keys);
+      if (pack.type === "hardware" && keys.length > 1) throw new HttpError(400, Gateway.ONE_KEY);
+      pack.keys = keys;
+    }
     if (pack.device && body.device && typeof body.device === "object") {
       const { input, output } = body.device as Partial<HardwareDevice>;
       if (input !== undefined) pack.device.input = input;
@@ -291,6 +312,12 @@ export class Gateway extends EventEmitter {
   /** Editing "who's on it" adds or removes a key on each affected pack. */
   private setMembers(channel: Channel, members: string[]): void {
     for (const pack of this.packs) {
+      const adding = members.includes(pack.id) && !pack.keys.some((key) => key.channelId === channel.id);
+      if (adding && pack.type === "hardware" && pack.keys.length >= 1) {
+        throw new HttpError(409, `${pack.name} already bridges a channel`);
+      }
+    }
+    for (const pack of this.packs) {
       const has = pack.keys.some((key) => key.channelId === channel.id);
       const want = members.includes(pack.id);
       if (want && !has) pack.keys.push(normaliseKey({ channelId: channel.id }, channel));
@@ -328,6 +355,8 @@ export class Gateway extends EventEmitter {
     const { deviceName, availableInputs = [], availableOutputs = [], address } = body;
     if (!deviceName) throw new HttpError(400, "deviceName is required");
     let pack = this.packs.find((p) => p.type === "hardware" && p.device?.name === deviceName);
+    // A hardware pack made ahead of time in the Manager is claimed by the node with the same name.
+    pack ??= this.packs.find((p) => p.type === "hardware" && !p.device && p.name.toLowerCase() === deviceName.toLowerCase());
     const now = Date.now();
     if (!pack) {
       pack = { id: randomUUID(), name: deviceName, type: "hardware", masterVolume: 100, keys: [] };

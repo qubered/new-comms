@@ -1,7 +1,7 @@
 // Minimal service worker: makes the app installable and reopens the shell without a network.
 const CACHE = "talk-shell-v1";
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["/", "/icon.svg", "/manifest.webmanifest"])));
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["/", "/icon.svg", "/icon-192.png", "/manifest.webmanifest"])));
   self.skipWaiting();
 });
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));

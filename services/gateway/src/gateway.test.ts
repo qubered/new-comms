@@ -71,6 +71,32 @@ describe("channels and pack keys stay in step", () => {
   });
 });
 
+describe("hardware packs", () => {
+  it("bridge one channel, can be made ahead of time and are claimed by a node of the same name", () => {
+    const { gateway } = setup();
+    const a = gateway.createChannel({ name: "A" });
+    const b = gateway.createChannel({ name: "B" });
+    expect(() => gateway.createPack({ name: "Rack", type: "hardware", keys: [{ channelId: a.id }, { channelId: b.id }] })).toThrow(/one channel/);
+    const rack = gateway.createPack({ name: "Stage rack", type: "hardware", keys: [{ channelId: a.id }] });
+    expect(() => gateway.updateChannel(b.id, { members: [rack.id] })).toThrow(/already bridges/);
+    const claimed = gateway.registerNode({ deviceName: "stage RACK", availableInputs: ["In 1"], availableOutputs: ["Out 1"], address: "10.0.0.5" });
+    expect(claimed.id).toBe(rack.id);
+    expect(claimed.keys).toHaveLength(1);
+    expect(() => gateway.updatePack(rack.id, { type: "human" })).toThrow(/registered node/);
+  });
+
+  it("lets a person become hardware before a node exists, keeping one key and dropping the PIN", () => {
+    const { gateway } = setup();
+    const a = gateway.createChannel({ name: "A" });
+    const b = gateway.createChannel({ name: "B" });
+    const pack = gateway.createPack({ name: "X", pin: "1234", keys: [{ channelId: a.id }, { channelId: b.id }] });
+    gateway.updatePack(pack.id, { type: "hardware" });
+    expect(pack.type).toBe("hardware");
+    expect(pack.keys).toHaveLength(1);
+    expect(pack.pin).toBeUndefined();
+  });
+});
+
 describe("PINs", () => {
   it("never appear in public state, must be four digits, and gate sessions", async () => {
     const { gateway } = setup();

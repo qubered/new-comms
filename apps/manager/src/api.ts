@@ -20,5 +20,5 @@ export const api = {
   createChannel: (body: ChannelWrite) => call<Channel>("POST", "/channels", body),
   updateChannel: (id: string, body: ChannelWrite) => call<Channel>("PATCH", `/channels/${id}`, body),
   deleteChannel: (id: string) => call<void>("DELETE", `/channels/${id}`),
-  health: () => call<{ ok: boolean; mixer: boolean; online: number }>("GET", "/health"),
+  health: () => call<{ ok: boolean; mixer: boolean; online: number; mixerStats: { tickAvgUs: number; tickMaxUs: number; peers: number } | null }>("GET", "/health"),
 };

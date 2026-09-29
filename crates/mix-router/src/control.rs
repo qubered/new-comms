@@ -100,6 +100,8 @@ pub enum PeerMessage {
     MasterVolume { volume: f32 },
     #[serde(rename_all = "camelCase")]
     PgmListen { channel_id: String, on: bool },
+    /// Test tool: hear your own mic through the mixer (round-trip latency measurement).
+    Loopback { on: bool },
     /// Heartbeat: answered with `pong`; silence from a phone for a few seconds ends its session.
     Ping,
 }
@@ -134,6 +136,9 @@ pub enum Event<'a> {
         reason: &'a str,
     },
     PackState(&'a PackState),
+    /// Mixer health, every two seconds: time spent per 10 ms cycle and peers connected.
+    #[serde(rename_all = "camelCase")]
+    Stats { tick_avg_us: u32, tick_max_us: u32, peers: usize },
     Levels { levels: &'a HashMap<String, f32> },
 }
 

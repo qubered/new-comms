@@ -41,7 +41,7 @@ export function Hardware({
                 <b>{pack.name}</b>
                 <span className="status">
                   <span className={`dot${online ? "" : " off"}`} />
-                  {online ? "Online" : `Offline, last seen ${relativeTime(pack.device?.lastSeen)}`}
+                  {online ? "Online" : pack.device ? `Offline, last seen ${relativeTime(pack.device.lastSeen)}` : "Waiting for a node"}
                 </span>
               </div>
               <div className="kv">

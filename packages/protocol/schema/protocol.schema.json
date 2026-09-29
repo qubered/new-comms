@@ -203,6 +203,7 @@
         { "type": "object", "additionalProperties": false, "required": ["type", "channelId", "volume"], "title": "VolumeMessage", "properties": { "type": { "const": "volume" }, "channelId": { "type": "string" }, "volume": { "$ref": "#/$defs/Volume" } } },
         { "type": "object", "additionalProperties": false, "required": ["type", "volume"], "title": "MasterVolumeMessage", "properties": { "type": { "const": "masterVolume" }, "volume": { "$ref": "#/$defs/Volume" } } },
         { "type": "object", "additionalProperties": false, "required": ["type", "channelId", "on"], "title": "PgmListenMessage", "properties": { "type": { "const": "pgmListen" }, "channelId": { "type": "string" }, "on": { "type": "boolean" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "on"], "title": "LoopbackMessage", "description": "Test tool only: hear your own microphone back through the mixer, for round-trip latency measurement.", "properties": { "type": { "const": "loopback" }, "on": { "type": "boolean" } } },
         { "type": "object", "additionalProperties": false, "required": ["type"], "title": "PingMessage", "description": "Heartbeat once a second; answered with a pong. Silence for a few seconds ends the session.", "properties": { "type": { "const": "ping" } } }
       ]
     },

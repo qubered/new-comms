@@ -63,7 +63,7 @@ export function Live({
       const fed = pack.keys.map((key) => channels.find((c) => c.id === key.channelId)?.name).filter(Boolean).join(", ");
       attention.push({
         title: `${pack.name} is offline`,
-        detail: `Last seen ${relativeTime(pack.device?.lastSeen)}.${fed ? ` ${fed} has no audio from it.` : ""}`,
+        detail: `${pack.device ? `Last seen ${relativeTime(pack.device.lastSeen)}.` : "No node has claimed it yet."}${fed ? ` ${fed} has no audio from it.` : ""}`,
         open: { tab: "hardware" },
       });
     }

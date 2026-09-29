@@ -33,6 +33,7 @@ struct Client {
     connected: bool,
     pending_msgs: Vec<String>,
     last_ping: Instant,
+    ping: bool,
 }
 
 impl Client {
@@ -51,7 +52,7 @@ impl Client {
         (
             Self {
                 name, rtc, socket, addr, mid: Some(mid), pt: None, channel: None, encoder, decoder, tone,
-                sent: 0, phase: 0.0, heard: Vec::new(), connected: false, pending_msgs: Vec::new(), last_ping: Instant::now(),
+                sent: 0, phase: 0.0, heard: Vec::new(), connected: false, pending_msgs: Vec::new(), last_ping: Instant::now(), ping: true,
             },
             offer.to_sdp_string(),
             pending,
@@ -84,7 +85,7 @@ impl Client {
                 Output::Event(_) => {}
             }
         }
-        if self.channel.is_some() && now.duration_since(self.last_ping) >= Duration::from_secs(1) {
+        if self.ping && self.channel.is_some() && now.duration_since(self.last_ping) >= Duration::from_secs(1) {
             self.last_ping = now;
             self.pending_msgs.push(r#"{"type":"ping"}"#.into());
         }
@@ -150,7 +151,7 @@ fn main() {
             if ev_tx.send(serde_json::from_str(&line).unwrap()).is_err() { return; }
         }
     });
-    let read = move || -> serde_json::Value { ev_rx.recv().unwrap() };
+    let read = || -> serde_json::Value { ev_rx.recv().unwrap() };
 
     assert_eq!(read()["event"], "ready");
     let key = |c: &str| serde_json::json!({"channelId": c, "volume": 100, "pgmListen": "always"});
@@ -239,6 +240,26 @@ fn main() {
         if let (Some(min), Some(max)) = (latencies.first(), latencies.last()) {
             println!("impulse latency over loopback ({} trials): min {min:.0} ms, p50 {:.0} ms, max {max:.0} ms", latencies.len(), latencies[latencies.len() / 2]);
         }
+    }
+    // Heartbeat: a phone that stops pinging is dropped, and its keys released.
+    clients[2].ping = false;
+    let silent_since = Instant::now();
+    let mut dropped_after = None;
+    while silent_since.elapsed() < Duration::from_secs(8) && dropped_after.is_none() {
+        let now = Instant::now();
+        for c in &mut clients { c.pump(now); }
+        if now >= next_audio { for c in &mut clients { c.send_audio(now); } next_audio += Duration::from_millis(10); }
+        while let Ok(event) = ev_rx.try_recv() {
+            if event["event"] == "closed" && event["packId"] == "c" {
+                assert_eq!(event["reason"], "timeout");
+                dropped_after = Some(silent_since.elapsed());
+            }
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    match dropped_after {
+        Some(after) => println!("silent peer dropped after {:.1} s", after.as_secs_f32()),
+        None => panic!("a peer that stopped pinging was never dropped"),
     }
     let _ = child.kill();
     let names: Vec<_> = clients.iter().map(|c| c.name).collect();

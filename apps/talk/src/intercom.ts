@@ -41,6 +41,9 @@ export class Intercom {
   status: Status = "connecting";
   detail?: string;
   lastState?: PeerState;
+  /** Test hooks (latency tool): a synthetic microphone, and a look at the mixed audio coming back. */
+  micOverride?: MediaStream;
+  onRemoteStream?: (stream: MediaStream) => void;
 
   constructor(
     private readonly packId: string,
@@ -52,6 +55,7 @@ export class Intercom {
     document.body.appendChild(this.audio);
     document.addEventListener("visibilitychange", this.onVisibility);
     window.addEventListener("online", this.onOnline);
+    window.addEventListener("offline", this.onOffline);
   }
 
   /** Call synchronously inside the tap that picked the pack. */
@@ -64,7 +68,7 @@ export class Intercom {
   async start(pin?: string): Promise<void> {
     if (pin) this.pin = pin;
     try {
-      this.mic = await navigator.mediaDevices.getUserMedia({
+      this.mic = this.micOverride ?? await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
     } catch {
@@ -81,8 +85,9 @@ export class Intercom {
     clearTimeout(this.retry);
     document.removeEventListener("visibilitychange", this.onVisibility);
     window.removeEventListener("online", this.onOnline);
+    window.removeEventListener("offline", this.onOffline);
     this.teardown();
-    this.mic?.getTracks().forEach((track) => track.stop());
+    if (!this.micOverride) this.mic?.getTracks().forEach((track) => track.stop());
     this.audio.remove();
     void this.wake?.release().catch(() => {});
   }
@@ -103,15 +108,26 @@ export class Intercom {
     this.mic?.getAudioTracks().forEach((track) => (track.enabled = enabled));
   }
 
+  /** WiFi went away: do not wait for ICE to notice. Keys drop now; we retry when it is back. */
+  private onOffline = () => {
+    if (this.stopped) return;
+    clearTimeout(this.retry);
+    this.teardown();
+    this.setStatus("reconnecting");
+  };
+
   private onVisibility = () => {
     if (document.visibilityState !== "visible") return;
     void this.holdScreenAwake();
+    // iOS suspends playback while the tab is hidden and does not always resume it.
+    if (this.audio.srcObject) void this.audio.play().catch(() => {});
     if (!this.stopped && this.pc?.connectionState !== "connected") this.reconnectNow();
   };
 
   private onOnline = () => {
     if (!this.stopped && this.pc?.connectionState !== "connected") this.reconnectNow();
   };
+
 
   private async holdScreenAwake() {
     try {
@@ -162,7 +178,9 @@ export class Intercom {
       this.channel = channel;
 
       pc.ontrack = (event) => {
-        this.audio.srcObject = event.streams[0] ?? new MediaStream([event.track]);
+        const stream = event.streams[0] ?? new MediaStream([event.track]);
+        this.audio.srcObject = stream;
+        this.onRemoteStream?.(stream);
         // Ask for the smallest playout buffer the browser will give us.
         const receiver = event.receiver as RTCRtpReceiver & { jitterBufferTarget?: number | null; playoutDelayHint?: number };
         try {

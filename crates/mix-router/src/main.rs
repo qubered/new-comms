@@ -22,6 +22,7 @@ use socket2::{Domain, Protocol, Socket, Type};
 const TICK: Duration = Duration::from_millis(10);
 const MAX_PEERS: usize = 64;
 const LEVEL_EVERY: u32 = 10; // ticks: 100 ms
+const STATS_EVERY: u32 = 200; // ticks: 2 s
 
 enum Input {
     Command(Command),
@@ -114,6 +115,8 @@ struct Router {
     by_pack: HashMap<String, String>,
     control_generation: u64,
     tick_count: u32,
+    tick_sum_us: u64,
+    tick_max_us: u32,
     frames: HashMap<String, [f32; FRAME]>,
     peaks: HashMap<String, f32>,
     last_levels_nonzero: bool,
@@ -302,6 +305,7 @@ impl Router {
 
     /// One 10 ms mixing cycle.
     fn tick(&mut self, now: Instant) {
+        let started = Instant::now();
         self.frames.clear();
         for peer in self.peers.values_mut() {
             if !peer.connected {
@@ -326,6 +330,18 @@ impl Router {
             peer.send_frame(&out, now);
         }
         self.tick_count += 1;
+        let spent = started.elapsed().as_micros().min(u32::MAX as u128) as u32;
+        self.tick_sum_us += u64::from(spent);
+        self.tick_max_us = self.tick_max_us.max(spent);
+        if self.tick_count.is_multiple_of(STATS_EVERY) {
+            emit(&Event::Stats {
+                tick_avg_us: (self.tick_sum_us / u64::from(STATS_EVERY)) as u32,
+                tick_max_us: self.tick_max_us,
+                peers: self.peers.values().filter(|peer| peer.connected).count(),
+            });
+            self.tick_sum_us = 0;
+            self.tick_max_us = 0;
+        }
         if self.tick_count.is_multiple_of(LEVEL_EVERY) {
             let nonzero = self.peaks.values().any(|level| *level > 0.01);
             if nonzero || self.last_levels_nonzero {
@@ -415,6 +431,8 @@ fn main() {
         by_pack: HashMap::new(),
         control_generation: 0,
         tick_count: 0,
+        tick_sum_us: 0,
+        tick_max_us: 0,
         frames: HashMap::new(),
         peaks: HashMap::new(),
         last_levels_nonzero: false,

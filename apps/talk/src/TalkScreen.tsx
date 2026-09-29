@@ -72,7 +72,6 @@ export function TalkScreen({
   const [held, setHeld] = useState<Record<string, Held>>({});
   const [micOff, setMicOff] = useState(false);
   const [levelsMode, setLevelsMode] = useState(false);
-  const [menu, setMenu] = useState(false);
   const [volumes, setVolumes] = useState<Record<string, number>>(() =>
     Object.fromEntries(pack.keys.map((key) => [key.channelId, key.volume])),
   );
@@ -184,15 +183,7 @@ export function TalkScreen({
   return (
     <section className="screen on">
       <div className={`app${connected ? "" : " offline"}${micOff ? " micoff" : ""}${levelsMode ? " levels" : ""}`}>
-        <TopBar tone={tone} text={text}>
-          <button className="gear" aria-label="Menu" onClick={() => setMenu(true)}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <circle cx="5" cy="12" r="1.4" />
-              <circle cx="12" cy="12" r="1.4" />
-              <circle cx="19" cy="12" r="1.4" />
-            </svg>
-          </button>
-        </TopBar>
+        <TopBar tone={tone} text={text} title={pack.name} items={[{ label: "Switch pack", onClick: onLeave }]} />
         <div className="packrow">
           <span className="name">{pack.name}</span>
           <button
@@ -266,17 +257,6 @@ export function TalkScreen({
               }}
             />
           </div>
-        </div>
-      </div>
-      <div className={`sheet${menu ? " on" : ""}`} onClick={(event) => event.target === event.currentTarget && setMenu(false)}>
-        <div className="card">
-          <h2>{pack.name}</h2>
-          <button className="btn" onClick={onLeave}>
-            Switch pack
-          </button>
-          <button className="btn" onClick={() => setMenu(false)}>
-            Close
-          </button>
         </div>
       </div>
     </section>

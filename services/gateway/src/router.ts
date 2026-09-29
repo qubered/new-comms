@@ -20,7 +20,8 @@ export type RouterEvent =
   | { event: "connected"; sessionId: string; packId: string }
   | { event: "closed"; sessionId: string; packId: string; reason: string }
   | ({ event: "packState" } & RouterPackState)
-  | { event: "levels"; levels: Record<string, number> };
+  | { event: "levels"; levels: Record<string, number> }
+  | { event: "stats"; tickAvgUs: number; tickMaxUs: number; peers: number };
 
 /**
  * The gateway's link to mix-router: line-delimited JSON over a local TCP connection.

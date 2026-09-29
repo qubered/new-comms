@@ -1,13 +1,18 @@
 import { useState } from "react";
+import { TopBar } from "./TopBar.tsx";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "back", "0", "⌫"];
 
 export function PinPad({
+  systemName,
+  online,
   packName,
   verify,
   onBack,
   onAccepted,
 }: {
+  systemName: string;
+  online: boolean;
   packName: string;
   verify(pin: string): Promise<boolean>;
   onBack(): void;
@@ -40,6 +45,7 @@ export function PinPad({
 
   return (
     <section className="screen on">
+      <TopBar tone={online ? "" : "wait"} text={online ? systemName : "Reconnecting…"} items={[{ label: "Back to packs", onClick: onBack }]} />
       <div className="pin">
         <div className="who">
           <b>{packName}</b>

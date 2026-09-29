@@ -17,6 +17,7 @@ pub struct Pack {
     pub config: PackConfig,
     pub keyed: HashMap<String, bool>,
     pub mic_off: bool,
+    pub loopback: bool,
     pub pgm_on: HashMap<String, bool>,
     pub volumes: HashMap<String, f32>,
     pub master_volume: f32,
@@ -27,6 +28,7 @@ impl Pack {
         let mut pack = Self {
             keyed: HashMap::new(),
             mic_off: false,
+            loopback: false,
             pgm_on: HashMap::new(),
             volumes: HashMap::new(),
             master_volume: config.master_volume,
@@ -115,6 +117,7 @@ impl Mixer {
     pub fn release(&mut self, id: &str) -> Option<PackState> {
         let pack = self.packs.get_mut(id)?;
         pack.keyed.clear();
+        pack.loopback = false;
         Some(pack.state())
     }
 
@@ -155,6 +158,10 @@ impl Mixer {
             }
             PeerMessage::MasterVolume { volume } => pack.master_volume = volume.clamp(0.0, 100.0),
             PeerMessage::Ping => return None,
+            PeerMessage::Loopback { on } => {
+                pack.loopback = on;
+                return None;
+            }
             PeerMessage::PgmListen { channel_id, on } => {
                 let toggle = key(&channel_id).is_some_and(|k| k.pgm_listen == PgmListen::Toggle);
                 if !toggle {
@@ -224,6 +231,13 @@ impl Mixer {
                     for (sum, sample) in out.iter_mut().zip(frame) {
                         *sum += sample * gain;
                     }
+                }
+            }
+        }
+        if pack.loopback {
+            if let Some(own) = frames.get(listener) {
+                for (sum, sample) in out.iter_mut().zip(own) {
+                    *sum += sample;
                 }
             }
         }

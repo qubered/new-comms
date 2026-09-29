@@ -22,7 +22,14 @@ export function PackPicker({
   const status = !loaded ? "Connecting…" : online ? name : "Reconnecting…";
   return (
     <section className="screen on">
-      <TopBar tone={online && loaded ? "" : "wait"} text={status} />
+      <TopBar
+        tone={online && loaded ? "" : "wait"}
+        text={status}
+        items={[
+          { label: "Reload", onClick: () => location.reload() },
+          { label: "Latency test", onClick: () => (location.hash = "#latency") },
+        ]}
+      />
       <div className="packrow">
         <span className="name">Choose your pack</span>
       </div>
