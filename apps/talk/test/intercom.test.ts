@@ -66,3 +66,23 @@ test("capture resolving after stop is released without attaching a sender", asyn
     else Reflect.deleteProperty(globalThis, "navigator");
   }
 });
+
+test("leaving key controls releases unacknowledged presses and server-held keys", () => {
+  const sent: { type: string; key: number | "reply"; on: boolean }[] = [];
+  const intercom = Object.assign(Object.create(Intercom.prototype), {
+    pressedKeys: new Set(),
+    channel: { readyState: "open", send: (data: string) => sent.push(JSON.parse(data)) },
+    lastState: { keys: { reply: true, 2: false } },
+  }) as Intercom;
+  intercom.send({ type: "key", key: 6, on: true });
+  // Levels or a screen transition can happen before the router echoes Key 6.
+  intercom.releaseKeys();
+  assert.deepEqual(sent, [
+    { type: "key", key: 6, on: true },
+    { type: "key", key: 6, on: false },
+    { type: "key", key: "reply", on: false },
+  ]);
+  Object.assign(intercom, { lastState: { keys: {} } });
+  intercom.releaseKeys();
+  assert.equal(sent.length, 3, "a second cleanup does not re-key or resend old local presses");
+});

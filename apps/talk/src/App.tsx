@@ -45,7 +45,16 @@ export function App() {
     setView({ screen: "talk", packId: pack.id, intercom });
   };
 
+  const activeIntercom = view.screen === "pick" ? undefined : view.intercom;
+  useEffect(() => () => activeIntercom?.stop(), [activeIntercom]);
+
   const [hash, setHash] = useState(location.hash);
+  useEffect(() => {
+    if (hash === "#latency" && view.screen !== "pick") {
+      view.intercom.stop();
+      setView({ screen: "pick" });
+    }
+  }, [hash, view]);
   useEffect(() => {
     const listener = () => setHash(location.hash);
     window.addEventListener("hashchange", listener);

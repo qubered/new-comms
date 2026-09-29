@@ -72,6 +72,8 @@ export function TalkScreen({
   const lastEdit = useRef(0);
   const connected = status === "connected";
   const state = peer ?? live[pack.id];
+  // A hidden or replaced screen must never leave an unattended microphone keyed.
+  useEffect(() => () => intercom.releaseKeys(), [intercom]);
   useEffect(() => {
     intercom.handlers = {
       onStatus: (next, why) => {
@@ -135,7 +137,14 @@ export function TalkScreen({
     const next = !micOff;
     setMicOff(next);
     intercom.setMicEnabled(!next);
-    if (next) setHeld({});
+    if (next) setHeld((current) => Object.fromEntries(
+      Object.entries(current).filter(([id]) => {
+        const trigger = pack.triggers.find((trigger) =>
+          id === "reply" ? trigger.kind === "reply" : trigger.kind === "key" && trigger.key === Number(id),
+        );
+        return trigger && !keyOpensMic(pack, trigger);
+      }),
+    ));
     send({ type: "micOff", on: next });
   };
   const byId = (id: string) => ports.find((port) => port.id === id);
@@ -198,7 +207,13 @@ export function TalkScreen({
           <button
             className={`lvbtn${levelsMode ? " on" : ""}`}
             aria-pressed={levelsMode}
-            onClick={() => setLevelsMode(!levelsMode)}
+            onClick={() => {
+              if (!levelsMode) {
+                intercom.releaseKeys();
+                setHeld({});
+              }
+              setLevelsMode(!levelsMode);
+            }}
           >
             {levelsMode ? "Done" : "Levels"}
           </button>

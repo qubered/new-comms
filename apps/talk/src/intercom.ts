@@ -50,6 +50,7 @@ const TICKER = `setInterval(() => postMessage(0), ${PING_MS});`;
 export class Intercom {
   private pc?: RTCPeerConnection;
   private channel?: RTCDataChannel;
+  private pressedKeys = new Set<number | "reply">();
   private sender?: RTCRtpSender;
   private sessionId?: string;
   private mic?: MediaStream;
@@ -134,6 +135,7 @@ export class Intercom {
   }
 
   stop(): void {
+    if (this.stopped) return;
     this.stopped = true;
     this.micRequest += 1;
     clearTimeout(this.retry);
@@ -183,7 +185,21 @@ export class Intercom {
   send(message: PortPeerMessage): boolean {
     if (this.channel?.readyState !== "open") return false;
     this.channel.send(JSON.stringify(message));
+    if (message.type === "key") {
+      if (message.on) this.pressedKeys.add(message.key);
+      else this.pressedKeys.delete(message.key);
+    }
     return true;
+  }
+
+  /** Release even presses whose server acknowledgement has not arrived yet. */
+  releaseKeys(): void {
+    const keys = new Set(this.pressedKeys);
+    for (const [key, on] of Object.entries(this.lastState?.keys ?? {})) {
+      if (on) keys.add(key === "reply" ? "reply" : Number(key));
+    }
+    for (const key of keys) this.send({ type: "key", key, on: false });
+    this.pressedKeys.clear();
   }
 
   setMicEnabled(enabled: boolean): void {
@@ -493,6 +509,7 @@ export class Intercom {
     this.sender = undefined;
     this.sessionId = undefined;
     this.lastState = undefined;
+    this.pressedKeys.clear();
     if (pc) {
       pc.onconnectionstatechange = null;
       pc.close();
