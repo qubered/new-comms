@@ -43,6 +43,8 @@ Stations have at most six numbered keys plus **Reply**. Keys can hold multiple f
 
 Save changes in the port editor. Invalid routes are rejected without partially changing the show. Remove referring functions before deleting a port or disabling a channel they use.
 
+Unsaved port and node drafts stay available while you navigate Manager. The unsaved-changes banner returns you to each draft or lets you discard it. Failed saves retain the draft; pending saves stay locked across navigation. Reloading or closing the page warns about unsaved edits. Drafts are kept in memory, not browser storage. If another Manager removes a port or node, its draft remains viewable for copying or discarding.
+
 On Talk, choose a station. The top bar names incoming direct callers. Reply targets the last caller that can receive audio; a microphone input can call you but cannot receive a reply. **Levels** sets volumes per source, and the dock controls master volume and mic kill. Red means the operator’s microphone is open, while listen keys remain dimmed.
 
 ## Hardware bridges
@@ -109,6 +111,6 @@ npm run smoke         # real router + WebRTC clients, v1 reference and v2 routin
 
 Regenerate types with `npm run generate -w @comms/protocol` after changing the schema. `npx tsx scripts/seed-v2.ts --output /path/to/state.json` writes a v2 seed to a new file without contacting a gateway.
 
-The repository layout remains `apps/talk`, `apps/manager`, `services/gateway`, `crates/mix-router`, `crates/comms-node` and `packages/protocol`. Multiple configured routes from the same source are summed; avoid unintended duplicate feeds. A real interface on another machine, WiFi latency and long-running locked-phone behavior require physical acceptance testing before a live show.
+The repository layout remains `apps/talk`, `apps/manager`, `services/gateway`, `crates/mix-router`, `crates/comms-node` and `packages/protocol`. Parallel routes between the same source and destination carry that source once, using the highest active gain after IFB dim. Their individual functions and gates remain visible and editable. A real interface on another machine, WiFi latency and long-running locked-phone behavior require physical acceptance testing before a live show.
 
-An IFB already feeds its configured destination. Adding a gated listen to that same destination adds another route while held; use a different monitoring station to avoid doubling the feed. Always triggers remain open even during silence or source disconnection, including IFB interrupt gates; use Vox when an interrupt should follow signal activity.
+An IFB already feeds its configured destination; adding a monitor to that destination does not double its audio. Physical source routes close when their session disconnects, releasing incoming calls, On Call gates and IFB interruptions. Always remains active during silence while connected; use Vox when an interrupt should follow signal activity.

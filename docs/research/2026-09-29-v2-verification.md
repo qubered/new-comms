@@ -25,11 +25,36 @@ all passed. The 68 tests comprise Talk 9, protocol 18, gateway 17, router 17, no
 and audio host 1. The repeat smoke measured loopback p50 18 ms / p95 21 ms over 20
 impulses; an 80 ms burst returned to the measured target within 900 ms.
 
-Two existing routing semantics are explicit rather than changed by this audit:
-parallel routes sum (including a monitor to an IFB's already configured destination),
-and Always interrupt gates stay open without signal. Use Vox for signal-dependent
-interrupts. Migrated nodes need their old ID supplied with `--node-id`. These are
-documented in the README. The physical acceptance limits below remain unchanged.
+The user subsequently requested fixes for all remaining points. Those software
+items are now resolved:
+
+- Parallel source/destination routes contribute once at the highest active gain,
+  including conference contributions, IFB monitoring and dynamic Reply. IFB program
+  dim is applied before selecting the effective gain; ownership/gates remain editable.
+- Disconnected physical sources close their routes, clearing incoming calls, On Call
+  gating and IFB interruption. Real WebRTC smoke verifies that a connected silent
+  Always source still interrupts, then restores program when disconnected. Vox remains
+  the choice for signal-dependent operation.
+- Manager retains unsaved port/node drafts across navigation and live updates, warns
+  on unload, preserves failed saves, and retains deleted-port/node drafts for recovery.
+  Keyed in-flight locks and identity-checked clearing prevent stale save responses
+  from deleting newer drafts or stealing navigation.
+
+Final verification: **75 tests** (Talk 9, protocol 21, gateway 17, router 21, node 6,
+audio host 1), typecheck, production builds and both smoke suites passed. The expanded
+WebRTC smoke covers duplicate amplitude and offline Always/IFB behavior. Repeat
+loopback p50/p95 was 18/23 ms over 20 impulses; the packet burst recovered within
+900 ms. Independent review found no remaining blocking defects in these changes.
+
+Browser checks verified existing/new station drafts and node drafts across navigation,
+preservation during an external inventory update, discard using the latest saved
+values, a rejected group save retaining the draft, successful create clearing it, and
+a remotely deleted port retaining a viewable draft with saving disabled. A local HTTP
+proxy held a real save response: reopening the editor kept inputs/discard locked;
+releasing the response cleared the saved draft without navigating away from Live.
+
+Migrated nodes still need their old ID supplied with `--node-id`, as documented in
+the README. The physical acceptance limits below remain unchanged.
 
 ## Initial implementation record
 
