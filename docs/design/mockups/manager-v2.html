@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manager v2 — port-first mockup</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#121417; --surface:#1A1D21; --raised:#22262B; --raised-2:#2A2F35; --line:#2C3137; --line-2:#3E444C;
+  --fg:#F2F2F0; --fg-2:#A8ADB4; --fg-3:#6F757D;
+  --hot:#E0202F; --pl:#5B9BFF; --direct:#C48BFF; --pgm:#F0B429; --ok:#3FCB7A; --warn:#F5A524; --ifb:#c6c6ff;
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--fg);font:14.5px/1.45 var(--ui);-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+button{background:none;border:0;padding:0;cursor:pointer}
+button:disabled{cursor:default;opacity:.45}
+:is(button,input,select,[tabindex]):focus-visible{outline:2px solid var(--pl);outline-offset:2px}
+[hidden]{display:none!important}
+.num{font-variant-numeric:tabular-nums}
+.dim{color:var(--fg-3)} .muted{color:var(--fg-2)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
+.dot.off{background:var(--fg-3)} .dot.hot{background:var(--hot)} .dot.warn{background:var(--warn)}
+.badge{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:10px;background:var(--raised);font-size:12px;color:var(--fg-2);white-space:nowrap}
+.badge.hot{background:var(--hot);color:#fff} .badge.warn{background:#3d2d10;color:#FFC96B}
+.btn{height:34px;padding:0 12px;border-radius:7px;border:1px solid var(--line-2);background:var(--surface);display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--raised)}
+.btn.primary{background:var(--pl);border-color:var(--pl);color:#0e1116;font-weight:600}
+.btn.quiet{background:none;border-color:transparent;color:var(--fg-2)}
+.btn.sm{height:28px;padding:0 9px;font-size:13px}
+.sw{display:inline-block;width:3px;height:15px;border-radius:1px;vertical-align:-2px;margin-right:8px;background:var(--line-2);flex:none}
+.sw.conference{background:var(--pl)} .sw.panel{background:var(--ok)} .sw.input,.sw.output{background:var(--pgm)} .sw.group{background:var(--direct)} .sw.ifb{background:var(--ifb)}
+
+.shell{display:grid;grid-template-columns:200px 1fr;min-height:100vh}
+.side{border-right:1px solid var(--line);padding:18px 12px 16px;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;height:100vh}
+.brand{padding:2px 10px 6px;display:flex;flex-direction:column}
+.brand b{font-size:15px} .brand span{color:var(--fg-2);font-size:13px}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:7px;color:var(--fg-2)}
+.nav button:hover{background:var(--surface);color:var(--fg)} .nav button.on{background:var(--raised);color:var(--fg)}
+.gw{margin-top:auto;padding:12px 10px 0;border-top:1px solid var(--line);font-size:13px;color:var(--fg-2);display:flex;flex-direction:column;gap:4px}
+.gw .r{display:flex;justify-content:space-between;gap:8px}
+main{min-width:0;padding:22px 28px 64px;display:flex;flex-direction:column;gap:18px}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.head h1{margin:0;font-size:22px;font-weight:600;line-height:1.2}
+.head .sub{color:var(--fg-2);margin-top:3px;font-size:14px;max-width:72ch}
+.tab{display:flex;flex-direction:column;gap:18px}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toolbar input{height:34px;background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:0 10px;width:220px}
+.seg{display:inline-flex;background:var(--surface);border:1px solid var(--line-2);border-radius:7px;padding:2px;gap:2px}
+.seg button{height:28px;padding:0 11px;border-radius:5px;color:var(--fg-2);white-space:nowrap;font-size:13.5px}
+.seg button.on{background:var(--raised-2);color:var(--fg)}
+
+/* ports: table + editor */
+.ports{display:grid;grid-template-columns:minmax(380px,1fr) minmax(0,1.3fr);gap:24px;align-items:start}
+.ptable{border:1px solid var(--line);border-radius:9px;overflow:auto;max-height:calc(100vh - 210px)}
+table.pt{width:100%;border-collapse:separate;border-spacing:0;font-size:13.5px}
+.pt th{position:sticky;top:0;background:var(--surface);text-align:left;font-weight:500;color:var(--fg-3);font-size:12.5px;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;z-index:1}
+.pt td{padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.pt tr{cursor:pointer} .pt tbody tr:hover td{background:var(--surface)} .pt tbody tr.on td{background:var(--raised)}
+.pt tr.grp td{background:var(--surface);color:var(--fg-3);font-size:12px;padding:6px 10px;cursor:default}
+.pt td.lbl{font-weight:500}
+.editor{display:flex;flex-direction:column;gap:22px;position:sticky;top:22px}
+.ed-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.name-in{font-size:20px;font-weight:600;background:none;border:0;border-bottom:1px solid transparent;padding:2px 0;min-width:0;flex:1}
+.name-in:hover{border-bottom-color:var(--line-2)} .name-in:focus{outline:0;border-bottom-color:var(--pl)}
+section.blk{display:flex;flex-direction:column;gap:10px}
+section.blk>h3{margin:0;font-size:13.5px;font-weight:600;color:var(--fg-2);display:flex;align-items:center;gap:8px}
+section.blk>h3 .dim{font-weight:400}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 18px}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label{font-size:12.5px;color:var(--fg-2)} .field .help{font-size:12px;color:var(--fg-3)}
+.in,.sel{height:34px;background:var(--surface);border:1px solid var(--line-2);border-radius:7px;padding:0 10px;width:100%;min-width:0}
+.sel{-webkit-appearance:none;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--fg-3) 50%),linear-gradient(135deg,var(--fg-3) 50%,transparent 50%);background-position:calc(100% - 14px) 14px,calc(100% - 9px) 14px;background-size:5px 5px;background-repeat:no-repeat;padding-right:26px}
+
+/* triggers */
+.trig{border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.trig .row{display:grid;grid-template-columns:110px 1fr auto;gap:10px;align-items:start;padding:10px 12px;border-bottom:1px solid var(--line)}
+.trig .row:last-child{border-bottom:0}
+.trig .row.on{background:var(--surface)}
+.trig .tname{font-weight:500;padding-top:5px;display:flex;flex-direction:column;gap:2px}
+.trig .tname small{font-weight:400;color:var(--fg-3);font-size:12px}
+.fns{display:flex;flex-direction:column;gap:6px;min-width:0}
+.fn{display:grid;grid-template-columns:118px minmax(0,1fr) 88px 28px;gap:6px;align-items:center}
+.fn .sel,.fn .in{height:30px;font-size:13px}
+.fn .lvl{display:flex;align-items:center;gap:6px;color:var(--fg-2);font-size:12.5px}
+.fn .x{width:28px;height:28px;border-radius:6px;color:var(--fg-3);font-size:15px} .fn .x:hover{background:var(--raised);color:var(--fg)}
+.addfn{height:28px;padding:0 8px;border-radius:6px;color:var(--pl);font-size:13px;display:inline-flex;align-items:center;gap:6px;align-self:flex-start}
+.addfn:hover{background:var(--surface)}
+.trig .mode{padding-top:3px}
+.nothing{color:var(--fg-3);font-size:13px;padding-top:6px}
+
+/* beltpack face for panel keys */
+.bp{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:420px}
+.bpkey{position:relative;border-radius:9px;background:var(--raised);padding:10px 12px 10px 14px;min-height:64px;text-align:left;display:flex;flex-direction:column;gap:3px;border:1px solid transparent}
+.bpkey:hover{background:var(--raised-2)} .bpkey.on{border-color:var(--pl)}
+.bpkey .n{position:absolute;left:6px;top:8px;font-size:11px;color:var(--fg-3)}
+.bpkey .t{font-weight:600;font-size:15px;padding-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bpkey .f{font-size:12px;color:var(--fg-2);padding-left:8px}
+.bpkey.empty .t{color:var(--fg-3);font-weight:400}
+.bpkey.reply{grid-column:1/-1;background:var(--surface);border-style:dashed;border-color:var(--line-2);min-height:44px;flex-direction:row;align-items:center;justify-content:space-between}
+.bpkey.reply.on{border-color:var(--pl);border-style:solid}
+.bpkey.live{background:var(--hot)} .bpkey.live .f{color:rgba(255,255,255,.75)}
+.keyed{border:1px solid var(--line-2);border-radius:9px;padding:12px;display:flex;flex-direction:column;gap:10px;background:var(--surface)}
+.keyed h4{margin:0;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+
+/* incoming */
+.inc{display:flex;flex-direction:column;gap:4px;font-size:13.5px}
+.inc .it{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:7px 10px;border:1px solid var(--line);border-radius:7px}
+.inc .it small{color:var(--fg-3)} .inc .it .go{color:var(--pl);font-size:13px}
+
+/* groups & confs */
+.gc{display:grid;grid-template-columns:240px minmax(0,1fr);gap:28px;align-items:start}
+.list{display:flex;flex-direction:column;gap:2px}
+.list .grp{padding:12px 8px 4px;color:var(--fg-3);font-size:12.5px}
+.list .item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px;border-radius:7px}
+.list .item:hover{background:var(--surface)} .list .item.on{background:var(--raised)}
+.list .item .m{flex:1;min-width:0} .list .item .s{display:block;font-size:12.5px;color:var(--fg-3)}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{text-align:left;font-weight:500;font-size:12.5px;color:var(--fg-3);padding:0 8px 8px;border-bottom:1px solid var(--line)}
+.tbl td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.cell{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:22px;padding:0 6px;border-radius:4px;font-size:11.5px;font-weight:600;color:var(--fg-2);background:var(--raised);white-space:nowrap}
+.cell.T{background:#3a2a10;color:#FFC96B} .cell.L{background:#1e3350;color:#9cc2ff} .cell.TL{background:#1f3a2a;color:#8fe0b0} .cell.A{background:#3a1a3f;color:#e2b3ff} .cell.P{background:#2c2c44;color:#c6c6ff} .cell.V{background:#3a3010;color:#ffe08a}
+.cell.live{background:var(--hot);color:#fff}
+
+/* matrix */
+.mwrap{overflow:auto;border:1px solid var(--line);border-radius:9px;max-height:calc(100vh - 230px)}
+table.mx{border-collapse:separate;border-spacing:0}
+.mx th,.mx td{padding:0;vertical-align:middle}
+.mx thead th{position:sticky;top:0;z-index:3;background:var(--surface);border-bottom:1px solid var(--line)}
+.mx thead th.corner{left:0;z-index:5;min-width:180px}
+.mx thead th.grp{height:24px;font-size:12px;font-weight:400;color:var(--fg-3);text-align:left;padding:0 8px;border-left:1px solid var(--line-2)}
+.mx thead th.col{height:104px;width:30px;min-width:30px;border-left:1px solid var(--line)}
+.mx thead th.col .lbl{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:500;font-size:12px;white-space:nowrap;max-height:96px;overflow:hidden;text-overflow:ellipsis;padding:6px 0}
+.mx tbody th{position:sticky;left:0;z-index:2;background:var(--bg);text-align:left;font-weight:500;padding:0 10px 0 12px;border-right:1px solid var(--line-2);border-bottom:1px solid var(--line);white-space:nowrap;font-size:13px;min-width:180px}
+.mx tbody tr.grp th{background:var(--surface);color:var(--fg-3);font-weight:400;font-size:12px;height:24px}
+.mx tbody tr.grp td{background:var(--surface)}
+.mx tbody tr{height:30px}
+.mx tbody td{border-bottom:1px solid var(--line);border-left:1px solid var(--line);text-align:center;width:30px;min-width:30px}
+.mx .cell{width:auto;min-width:24px;height:22px;padding:0 3px;cursor:pointer;background:none}
+.mx .cell.T,.mx .cell.L,.mx .cell.TL,.mx .cell.A,.mx .cell.P,.mx .cell.V{background:var(--raised)}
+.mx .cell.T{background:#3a2a10} .mx .cell.L{background:#1e3350} .mx .cell.TL{background:#1f3a2a} .mx .cell.A{background:#3a1a3f} .mx .cell.P{background:#2c2c44} .mx .cell.V{background:#3a3010}
+.mx .cell:hover{outline:1px solid var(--line-2)}
+.mx .cell.live,.tbl .cell.live{background:var(--hot);color:#fff}
+#live-t th:nth-child(3),#live-t td:nth-child(3){width:46%}
+#live-t th:nth-child(4),#live-t td:nth-child(4){width:30%}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--fg-3);align-items:center}
+.legend .c{display:inline-flex;align-items:center;gap:6px}
+
+/* hardware */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.card .ch{display:flex;justify-content:space-between;align-items:center;gap:10px} .card .ch b{font-size:16px}
+.circ{display:grid;grid-template-columns:auto 1fr auto auto;gap:6px 12px;align-items:center;font-size:13.5px}
+.circ .hd{color:var(--fg-3);font-size:12px}
+.circ input[type=checkbox]{width:16px;height:16px;accent-color:var(--pl)}
+.circ .nm{background:none;border:0;border-bottom:1px solid transparent;padding:2px 0;min-width:0} .circ .nm:hover{border-bottom-color:var(--line-2)}
+
+/* live */
+.live{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start}
+.rail{display:flex;flex-direction:column;gap:22px}
+.rail h2{margin:0 0 8px;font-size:14px;font-weight:600;color:var(--fg-2)}
+.attn .it{display:grid;grid-template-columns:8px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.attn .it .dot{margin-top:6px} .attn .it small{display:block;color:var(--fg-2);font-size:13px}
+.empty{color:var(--fg-3);font-size:13.5px}
+.lrow td .chips{display:flex;gap:6px;flex-wrap:wrap}
+.pop{position:fixed;z-index:20;background:var(--surface);border:1px solid var(--line-2);border-radius:9px;padding:12px 14px;display:none;flex-direction:column;gap:8px;min-width:240px;box-shadow:0 12px 40px rgba(0,0,0,.5);font-size:13.5px}
+.pop.on{display:flex}
+.pop h3{margin:0;font-size:14px}
+@media (max-width:1100px){.ports,.gc,.live{grid-template-columns:1fr}.editor{position:static}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><b>Manager</b><span>Stage A</span></div>
+    <nav class="nav" id="nav">
+      <button data-tab="live">Live <span id="n-live"></span></button>
+      <button class="on" data-tab="ports">Ports <span class="dim" id="n-ports"></span></button>
+      <button data-tab="gc">Groups &amp; conferences <span class="dim" id="n-gc"></span></button>
+      <button data-tab="matrix">Matrix</button>
+      <button data-tab="hardware">Hardware <span class="dim" id="n-hw"></span></button>
+    </nav>
+    <div class="gw">
+      <div class="r"><span>Gateway</span><span class="num">10.0.0.12</span></div>
+      <div class="r"><span>Mixer</span><span class="num">OK, 0.2 ms</span></div>
+      <div class="r"><span>Online</span><span class="num" id="gw-online"></span></div>
+    </div>
+  </aside>
+
+  <main>
+    <section class="tab" id="tab-ports">
+      <div class="head">
+        <div><h1>Ports</h1><div class="sub">Everything audio comes from or goes to. Pick a port to set what its keys do and what it does on its own (always, when it hears voice, when it is called).</div></div>
+        <button class="btn primary">New port</button>
+      </div>
+      <div class="toolbar">
+        <input placeholder="Search" id="p-search" aria-label="Search ports">
+        <span class="seg" id="p-filter"><button class="on" data-f="all">All</button><button data-f="panel">Panels</button><button data-f="input">Inputs</button><button data-f="output">Outputs</button><button data-f="virtual">Conferences, groups, IFBs</button></span>
+        <span class="dim" id="p-count"></span>
+      </div>
+      <div class="ports">
+        <div class="ptable"><table class="pt" id="pt"></table></div>
+        <div class="editor" id="ed"></div>
+      </div>
+    </section>
+
+    <section class="tab" id="tab-gc" hidden>
+      <div class="head"><div><h1>Groups &amp; conferences</h1><div class="sub">Who is in each conference, group and IFB. Membership comes from the ports' own functions; add a member here and it is written onto that port.</div></div><button class="btn primary">New</button></div>
+      <div class="gc"><div class="list" id="gc-list"></div><div class="editor" id="gc-ed" style="position:static"></div></div>
+    </section>
+
+    <section class="tab" id="tab-matrix" hidden>
+      <div class="head"><div><h1>Matrix</h1><div class="sub">Every crosspoint the ports' functions produce. Sources down, destinations across. Click a cell to open the port whose function makes it.</div></div></div>
+      <div class="legend"><span class="c"><span class="cell T">T</span>key talks</span><span class="c"><span class="cell L">L</span>listens</span><span class="c"><span class="cell TL">TL</span>talk + listen</span><span class="c"><span class="cell A">A</span>always</span><span class="c"><span class="cell V">V</span>vox</span><span class="c"><span class="cell P">P</span>program</span></div>
+      <div class="mwrap"><table class="mx" id="mx"></table></div>
+    </section>
+
+    <section class="tab" id="tab-hardware" hidden>
+      <div class="head"><div><h1>Hardware</h1><div class="sub">A node offers its interface's channels. Tick the ones in use; each becomes an input or output port. Give an in and an out a shared name to show them as a pair.</div></div></div>
+      <div class="cards" id="hw"></div>
+    </section>
+
+    <section class="tab" id="tab-live" hidden>
+      <div class="head"><div><h1>Live</h1><div class="sub">What is open right now: keys down, voice-operated ports that are talking, and who is calling whom.</div></div></div>
+      <div class="live">
+        <table class="tbl" id="live-t"></table>
+        <div class="rail">
+          <div><h2>Needs attention <span class="badge warn" id="attn-n"></span></h2><div class="attn" id="attn"></div></div>
+          <div><h2>Open right now</h2><div id="open"></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="pop" id="pop"></div>
+
+<script>
+(() => {
+  // ---------- data model (spec rev 3) ----------
+  const P = []; const byId = {};
+  const port = (o) => { o.triggers = o.triggers || []; P.push(o); byId[o.id] = o; return o; };
+  const T = (kind, functions=[], extra={}) => ({kind, functions, ...extra});
+  const F = (fn, target, level=0) => ({fn, target, level});
+
+  // panels
+  [['dir','Director','Alex'],['sm','Stage Manager','Priya'],['td','TD','Sam'],['cam1','Camera 1',''],['cam2','Camera 2',''],['cam3','Camera 3',''],['lx','Lighting','Jo'],['a1','Audio A1',''],['a2','Audio A2',''],['foh','FOH',''],['fly','Flys',''],['gfx','Graphics','']]
+    .forEach(([id,name,alias],i) => port({id,name:`Phone ${String(i+1).padStart(2,'0')}`,label:name,alias,subtitle:'',type:'panel',online:!['cam3','gfx'].includes(id),
+      panel:{pin:id==='dir'?'1234':'',master:80,replyMode:'ptt',vox:{threshold:-40,attack:20,hang:600}}}));
+  // hardware
+  const NODES = [
+    {id:'rack',name:'Stage rack',device:'Focusrite Scarlett 18i20',ip:'10.0.0.31',online:true,ins:8,outs:8,use:{in:[1,2,3,4],out:[1,2,5,7]},pairs:{1:'Truck',2:'Announce'}},
+    {id:'pgmb',name:'PGM bridge',device:'MOTU M4',ip:'10.0.0.32',online:true,ins:4,outs:4,use:{in:[1,2],out:[1]},pairs:{1:'Desk'}},
+  ];
+  const cname = (n,dir,i) => n.pairs[i] ? `${n.pairs[i]} ${dir}` : `${n.name} ${dir} ${i}`;
+  NODES.forEach(n => {
+    n.use.in.forEach(i => port({id:`${n.id}-in${i}`,name:`${n.name} in ${String(i).padStart(2,'0')}`,label:cname(n,'in',i),alias:'',subtitle:'',type:'input',online:n.online,hardware:{node:n.id,channel:i,pair:n.pairs[i]||'',trim:0},vox:{threshold:-40,attack:20,hang:600}}));
+    n.use.out.forEach(i => port({id:`${n.id}-out${i}`,name:`${n.name} out ${String(i).padStart(2,'0')}`,label:cname(n,'out',i),alias:'',subtitle:'',type:'output',online:n.online,hardware:{node:n.id,channel:i,pair:n.pairs[i]||'',trim:0}}));
+  });
+  byId['rack-in4'].alias = 'Wired mic'; byId['rack-out5'].alias = 'Stage PA';
+  // virtual
+  port({id:'show',name:'SHOW',label:'Show',alias:'',subtitle:'Everyone on the floor',type:'conference'});
+  port({id:'cams',name:'Cameras',label:'Cams',alias:'',subtitle:'Cam 1–3, TD, director',type:'conference'});
+  port({id:'lxc',name:'Lighting',label:'LX',alias:'',subtitle:'Jo and SM',type:'conference'});
+  port({id:'pgm',name:'Program',label:'PGM',alias:'',subtitle:'Show mix',type:'conference'});
+  port({id:'gcams',name:'All cameras',label:'Cams all',alias:'',subtitle:'',type:'group',group:{members:['cam1','cam2','cam3']}});
+  port({id:'gall',name:'All call',label:'All',alias:'',subtitle:'',type:'group',group:{members:P.filter(p=>p.type==='panel').map(p=>p.id)}});
+  port({id:'ifb1',name:'Talent IFB',label:'Talent',alias:'',subtitle:'Program, ducked by director',type:'ifb',ifb:{program:'pgm',destination:'rack-out7',dim:-15}});
+
+  // functions on triggers
+  const key = (p,n,mode,fns) => p.triggers.push(T('key',fns,{key:n,mode}));
+  key(byId.dir,1,'auto',[F('callToConference','show')]); key(byId.dir,2,'auto',[F('callToConference','cams')]); key(byId.dir,3,'latch',[F('callToPort','sm')]); key(byId.dir,4,'ptt',[F('callToGroup','gcams')]); key(byId.dir,5,'ptt',[F('callToIFB','ifb1')]);
+  byId.dir.triggers.push(T('reply',[F('reply')],{mode:'ptt'}), T('always',[F('listenToPort','pgm',-6)]));
+  key(byId.sm,1,'auto',[F('callToConference','show')]); key(byId.sm,2,'latch',[F('callToConference','lxc')]); key(byId.sm,3,'latch',[F('callToPort','dir')]); key(byId.sm,4,'ptt',[F('callToGroup','gall')]); key(byId.sm,5,'latch',[F('listenToPort','pgm')]);
+  byId.sm.triggers.push(T('reply',[F('reply')],{mode:'ptt'}));
+  ['td','lx','a1','a2','foh','fly'].forEach((id,i) => { key(byId[id],1,'auto',[F('callToConference','show')]); byId[id].triggers.push(T('reply',[F('reply')],{mode:'ptt'})); });
+  ['cam1','cam2','cam3'].forEach(id => { key(byId[id],1,'ptt',[F('callToConference','cams')]); key(byId[id],2,'ptt',[F('callToConference','show')]); byId[id].triggers.push(T('reply',[F('reply')],{mode:'ptt'})); });
+  key(byId.td,2,'auto',[F('callToConference','cams')]); key(byId.lx,2,'auto',[F('callToConference','lxc')]);
+  ['a1','a2','foh','gfx'].forEach(id => byId[id].triggers.push(T('always',[F('listenToPort','pgm')])));
+  byId.a2.triggers.push(T('vox',[F('callToPort','a1')]));           // a2's mic vox-calls a1 (like Dante In 10 → BP 10)
+  byId['rack-in1'].triggers.push(T('always',[F('callToConference','show')]));
+  byId['rack-in2'].triggers.push(T('always',[F('callToConference','show',-6)]));
+  byId['rack-in3'].triggers.push(T('always',[F('routeAudio','rack-out5')]));
+  byId['rack-in4'].triggers.push(T('vox',[F('callToConference','show')]));
+  byId['pgmb-in1'].triggers.push(T('always',[F('callToConference','pgm')]));
+  byId['pgmb-in2'].triggers.push(T('vox',[F('callToPort','dir')]));   // desk mic vox-calls the director
+  byId['rack-out1'].triggers.push(T('always',[F('callToConference','show')]));
+  byId['rack-out2'].triggers.push(T('always',[F('listenToPort','cams')]));
+  byId['rack-out5'].triggers.push(T('onCall',[F('callToConference','show',-12)]));
+  byId['rack-out7'].triggers.push(T('always',[F('listenToPort','ifb1')]));
+  byId['pgmb-out1'].triggers.push(T('always',[F('callToConference','show',-3)]));
+
+  const live = { keys:new Set(['sm:1','cam1:1']), vox:new Set(['rack-in4','pgmb-in2']) };
+
+  const TYPE = {panel:'Panel',input:'Input',output:'Output',conference:'Conference',group:'Group',ifb:'IFB'};
+  const hasIn = p => p.type==='panel'||p.type==='input'||p.type==='conference'||p.type==='ifb';
+  const hasOut = p => p.type!=='input';
+  const FNL = {callToPort:'Call to port',callToConference:'Call to conference',callToGroup:'Call to group',callToIFB:'Call to IFB',listenToPort:'Listen to',routeAudio:'Route audio',reply:'Reply'};
+  const TRIG = {always:['Always','Permanent'],vox:['Vox','While this port hears voice'],onCall:['On call','While someone calls this port']};
+  const MODE = {ptt:'Hold',latch:'Tap',auto:'Tap/hold'};
+  const fmtdb = v => (v>0?'+':'') + v + ' dB';
+  const $ = s => document.querySelector(s);
+  const targetsFor = fn => ({callToPort:P.filter(p=>hasOut(p)&&['panel','output'].includes(p.type)),callToConference:P.filter(p=>p.type==='conference'),callToGroup:P.filter(p=>p.type==='group'),callToIFB:P.filter(p=>p.type==='ifb'),listenToPort:P.filter(p=>hasOut(p)&&p.type!=='group'),routeAudio:P.filter(hasOut)})[fn]||[];
+  const fnsFor = p => { const o=[]; if (hasIn(p)) o.push('callToPort','callToConference','callToGroup','callToIFB'); else o.push('callToConference'); if (hasOut(p)) o.push('listenToPort'); o.push('routeAudio'); return o; };
+
+  // ---------- derive crosspoints ----------
+  // {s, d, level, gate:{port,trigger} | 'always', kind: 'T'|'L'|'A'|'V'|'P'}
+  function expand() {
+    const X = [];
+    P.forEach(p => p.triggers.forEach(tr => tr.functions.forEach(f => {
+      const t = byId[f.target]; const gated = tr.kind!=='always';
+      const gate = tr.kind==='always' ? 'always' : {port:p.id, trigger:tr};
+      const kindTalk = tr.kind==='key' ? 'T' : tr.kind==='vox' ? 'V' : tr.kind==='always' ? 'A' : 'A';
+      const push = (s,d,k,g,src) => X.push({s,d,level:f.level,gate:g,kind:k,owner:p.id,trigger:tr,fn:f});
+      switch (f.fn) {
+        case 'callToPort': if (hasIn(p)&&t) push(p.id,t.id,kindTalk,gate); break;
+        case 'callToGroup': if (hasIn(p)&&t) t.group.members.forEach(m => push(p.id,m,kindTalk,gate)); break;
+        case 'callToIFB': if (hasIn(p)&&t) push(p.id,t.id,'T',gate); break;
+        case 'callToConference': if (!t) break; if (hasIn(p)) push(p.id,t.id,kindTalk,gate); if (hasOut(p)) push(t.id,p.id,'L','always'); break;
+        case 'listenToPort': if (hasOut(p)&&t) push(t.id,p.id,'L',gate); break;
+        case 'routeAudio': if (t) push(p.id,t.id,'A',gate); break;
+      }
+    })));
+    P.filter(p=>p.type==='ifb').forEach(i => { if (byId[i.ifb.program]) X.push({s:i.ifb.program,d:i.id,level:0,gate:'always',kind:'P',owner:i.id}); });
+    return X;
+  }
+  const isOpen = x => x.gate==='always' || (x.gate.trigger.kind==='key' && live.keys.has(x.gate.port+':'+x.gate.trigger.key)) || (x.gate.trigger.kind==='vox' && live.vox.has(x.gate.port));
+  const incoming = p => expand().filter(x => x.d===p.id && x.owner!==p.id);
+  const keyCount = p => p.triggers.filter(t=>t.kind==='key').length;
+  const fnText = f => f.fn==='reply' ? 'Reply to last caller' : `${FNL[f.fn]} · ${byId[f.target]?.label ?? '?'}`;
+
+  // ---------- ports table ----------
+  let sel = 'dir', pfilter = 'all', psearch = '';
+  function renderTable() {
+    const groups = [['Panels','panel'],['Inputs','input'],['Outputs','output'],['Conferences','conference'],['Groups','group'],['IFBs','ifb']];
+    const show = p => (pfilter==='all' || (pfilter==='virtual' ? ['conference','group','ifb'].includes(p.type) : p.type===pfilter)) && (!psearch || (p.name+p.label+p.alias+p.subtitle).toLowerCase().includes(psearch));
+    let h = '<thead><tr><th></th><th>Name</th><th>Label</th><th>Alias</th><th>Subtitle</th><th>Does</th></tr></thead><tbody>'; let n=0;
+    groups.forEach(([t,ty]) => { const g = P.filter(p=>p.type===ty&&show(p)); if (!g.length) return; h += `<tr class="grp"><td colspan="6">${t}</td></tr>`;
+      g.forEach(p => { n++; const does = p.type==='panel' ? `${keyCount(p)} keys` + (p.triggers.some(t=>t.kind!=='key'&&t.kind!=='reply'&&t.functions.length)?' + standing':'') : ['conference','group','ifb'].includes(p.type) ? `${incoming(p).length} in, ${expand().filter(x=>x.s===p.id).length} out` : p.triggers.map(t=>t.kind==='always'?'Always':t.kind==='vox'?'Vox':'On call').join(', ') || '—';
+        h += `<tr class="${p.id===sel?'on':''}" data-id="${p.id}"><td><span class="dot ${p.online===false?'off':''}" style="${['conference','group','ifb'].includes(p.type)?'visibility:hidden':''}"></span></td><td>${p.name}</td><td class="lbl">${p.label}</td><td>${p.alias||'<span class="dim">–</span>'}</td><td class="dim">${p.subtitle||''}</td><td class="dim">${does}</td></tr>`; }); });
+    $('#pt').innerHTML = h + '</tbody>'; $('#p-count').textContent = `${n} ports`;
+  }
+  $('#pt').addEventListener('click', e => { const r = e.target.closest('tr[data-id]'); if (r) { sel = r.dataset.id; selKey = null; renderPorts(); } });
+  $('#p-search').addEventListener('input', e => { psearch = e.target.value.trim().toLowerCase(); renderTable(); });
+  $('#p-filter').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; pfilter = b.dataset.f; [...$('#p-filter').children].forEach(x=>x.classList.toggle('on',x===b)); renderTable(); });
+
+  // ---------- port editor ----------
+  let selKey = null;
+  function fnRow(p, tr, f, i) {
+    const opts = fnsFor(p); const targets = targetsFor(f.fn);
+    return `<div class="fn"><select class="sel" data-fnsel="${i}">${opts.map(o=>`<option value="${o}" ${o===f.fn?'selected':''}>${FNL[o]}</option>`).join('')}</select>
+      <select class="sel" data-tgt="${i}">${targets.map(t=>`<option value="${t.id}" ${t.id===f.target?'selected':''}>${t.label}${t.alias?' · '+t.alias:''} <span>(${TYPE[t.type]})</span></option>`).join('')}</select>
+      <span class="lvl"><input type="range" min="-40" max="12" step="0.5" value="${f.level}" style="width:54px" data-lvl="${i}"><span class="num" style="min-width:30px">${fmtdb(f.level)}</span></span>
+      <button class="x" data-rm="${i}" aria-label="Remove">×</button></div>`;
+  }
+  function trigRow(p, kind) {
+    let tr = p.triggers.find(t=>t.kind===kind);
+    const [name, help] = TRIG[kind];
+    const fns = tr ? tr.functions : [];
+    return `<div class="row" data-kind="${kind}"><div class="tname">${name}<small>${help}</small></div><div class="fns">${fns.map((f,i)=>fnRow(p,tr,f,i)).join('') || '<div class="nothing">No functions.</div>'}<button class="addfn" data-add="${kind}">+ Add function</button>${kind==='vox' ? `<div class="dim" style="font-size:12px;display:flex;gap:14px;flex-wrap:wrap;padding-top:2px"><span>Threshold <b class="num muted">−40 dBFS</b></span><span>Attack <b class="num muted">20 ms</b></span><span>Hang <b class="num muted">600 ms</b></span><button class="btn quiet sm" style="height:22px">Change</button></div>`:''}</div><div></div></div>`;
+  }
+  function renderEditor() {
+    const p = byId[sel]; if (!p) return;
+    const virtual = ['conference','group','ifb'].includes(p.type);
+    let h = `<div class="ed-head"><span class="sw ${p.type}" style="height:22px"></span><input class="name-in" value="${p.name}" aria-label="Name"><span class="badge">${TYPE[p.type]}</span>${!virtual ? `<span class="muted" style="font-size:13px"><span class="dot ${p.online?'':'off'}"></span> ${p.online ? (p.type==='panel'?'Online, iPhone, Safari':'Online') : 'Offline'}</span>`:''}</div>
+      <section class="blk"><div class="fields">
+        <div class="field"><label>Label</label><input class="in" value="${p.label}"><div class="help">What a key shows. Keep it short.</div></div>
+        <div class="field"><label>Alias</label><input class="in" value="${p.alias||''}" placeholder="Who or what"><div class="help">${p.type==='panel'?'Who has it today.':'What is plugged in.'}</div></div>
+        <div class="field"><label>Subtitle</label><input class="in" value="${p.subtitle||''}" placeholder="Optional"></div>
+      </div></section>`;
+    if (p.type==='panel') h += `
+      <section class="blk"><div class="fields">
+        <div class="field"><label>PIN</label><input class="in num" value="${p.panel.pin}" placeholder="None"></div>
+        <div class="field"><label>Starting volume</label><input class="in num" value="${p.panel.master}"></div>
+        <div class="field"><label>Reply key</label><select class="sel">${Object.entries(MODE).map(([k,v])=>`<option ${p.panel.replyMode===k?'selected':''}>${v}</option>`).join('')}</select></div>
+      </div></section>
+      <section class="blk"><h3>Keys <span class="dim">${keyCount(p)} of 6</span></h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;align-items:start">
+          <div class="bp">${[1,2,3,4,5,6].map(n => { const tr = p.triggers.find(t=>t.kind==='key'&&t.key===n); const f = tr && tr.functions[0]; const isLive = live.keys.has(p.id+':'+n);
+            return `<button class="bpkey ${tr?'':'empty'} ${selKey===n?'on':''} ${isLive?'live':''}" data-key="${n}"><span class="n">${n}</span><span class="t">${f ? (byId[f.target]?.label ?? '') : 'Empty'}</span><span class="f">${tr ? (f ? FNL[f.fn] + (tr.functions.length>1?` +${tr.functions.length-1}`:'') : 'No function') + ' · ' + MODE[tr.mode] : 'Tap to set'}</span></button>`; }).join('')}
+            <button class="bpkey reply ${selKey==='reply'?'on':''}" data-key="reply"><span><span class="t" style="padding:0">Reply</span> <span class="f" style="padding:0">Talks back to the last caller · ${MODE[p.panel.replyMode]}</span></span><span class="badge">Built in</span></button>
+          </div>
+          <div class="keyed" id="keyed">${keyEditor(p)}</div>
+        </div>
+      </section>`;
+    if (p.type!=='group' && !virtual) h += `<section class="blk"><h3>Standing functions</h3><div class="trig">${trigRow(p,'always')}${hasIn(p)?trigRow(p,'vox'):''}${trigRow(p,'onCall')}</div></section>`;
+    if (p.type==='input'||p.type==='output') { const n = NODES.find(n=>n.id===p.hardware.node); h += `<section class="blk"><h3>Hardware</h3><div class="fields">
+        <div class="field"><label>Node</label><input class="in" value="${n.name}" readonly></div>
+        <div class="field"><label>Channel</label><input class="in" value="${p.type==='input'?'Input':'Output'} ${p.hardware.channel}" readonly></div>
+        <div class="field"><label>Pair name</label><input class="in" value="${p.hardware.pair}" placeholder="e.g. Truck"></div>
+        <div class="field"><label>Trim</label><div style="display:flex;align-items:center;gap:8px"><input type="range" min="-24" max="24" step="0.5" value="${p.hardware.trim}" style="flex:1"><b class="num">${fmtdb(p.hardware.trim)}</b></div></div>
+      </div></section>`; }
+    if (p.type==='group') h += `<section class="blk"><h3>Members</h3><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${p.group.members.map(m=>`<span class="badge" style="height:28px;font-size:13px;color:var(--fg)">${byId[m].label}</span>`).join('')}<select class="sel" style="width:160px;height:30px"><option>Add…</option></select></div><div class="help dim" style="font-size:12.5px">A call to this group reaches every member at once. Members do not hear each other through it.</div></section>`;
+    if (p.type==='ifb') h += `<section class="blk"><h3>IFB</h3><div class="fields">
+        <div class="field"><label>Program</label><select class="sel">${P.filter(q=>hasOut(q)&&q.type!=='group'&&q.type!=='ifb').map(q=>`<option ${q.id===p.ifb.program?'selected':''}>${q.label}</option>`).join('')}</select><div class="help">What is heard when nobody is talking into it.</div></div>
+        <div class="field"><label>Goes to</label><select class="sel">${P.filter(q=>['panel','output'].includes(q.type)).map(q=>`<option ${q.id===p.ifb.destination?'selected':''}>${q.label}${q.alias?' · '+q.alias:''}</option>`).join('')}</select></div>
+        <div class="field"><label>Dim program by</label><select class="sel"><option>−10 dB</option><option selected>−15 dB</option><option>−20 dB</option><option>Cut</option></select><div class="help">While anyone is calling this IFB.</div></div>
+      </div></section>`;
+    if (p.type==='conference') h += `<section class="blk"><div class="help dim">A conference has no settings of its own. Who talks in and who hears it comes from the other ports' functions, listed below and on the Groups &amp; conferences page.</div></section>`;
+    // incoming (derived)
+    const inc = incoming(p);
+    h += `<section class="blk"><h3>Incoming <span class="dim">set on the other port</span></h3><div class="inc">${inc.length ? inc.map(x => { const o = byId[x.owner]; const tr = x.gate==='always' ? 'always' : x.gate.trigger.kind==='key' ? `key ${x.gate.trigger.key}` : x.gate.trigger.kind; return `<div class="it"><span class="cell ${x.kind}">${x.kind}</span><span>${byId[x.s].label}${x.s!==o.id?` <small>via ${o.label}</small>`:''} <small>· ${x.kind==='P'?'program':x.kind==='L'?'you hear it':'talks to you'} · ${tr}${x.level?` · ${fmtdb(x.level)}`:''}</small></span><button class="go" data-go="${o.id}">Open ${o.label}</button></div>`; }).join('') : '<div class="nothing">Nothing calls or feeds this port yet.</div>'}</div></section>`;
+    h += `<div style="display:flex;gap:6px;align-items:center;border-top:1px solid var(--line);padding-top:12px"><span class="dim" style="font-size:13px">Changes save as you make them.</span><span style="flex:1"></span><button class="btn quiet" style="color:#FF7B84">Remove port</button></div>`;
+    $('#ed').innerHTML = h;
+  }
+  function keyEditor(p) {
+    if (selKey===null) return `<div class="nothing">Pick a key to set what it does.</div>`;
+    if (selKey==='reply') return `<h4>Reply</h4><div class="field"><label>Behaviour</label><select class="sel">${Object.entries(MODE).map(([k,v])=>`<option ${p.panel.replyMode===k?'selected':''}>${v}</option>`).join('')}</select></div><div class="dim" style="font-size:12.5px">Lights with whoever last called this panel directly or through a group, and talks back to them. It does not count toward six.</div>`;
+    const tr = p.triggers.find(t=>t.kind==='key'&&t.key===selKey);
+    if (!tr) return `<h4>Key ${selKey}</h4><div class="nothing">Empty.</div><button class="addfn" data-add="key">+ Add function</button>`;
+    return `<h4>Key ${selKey}<button class="btn quiet sm" data-clear="${selKey}">Clear key</button></h4>
+      <div class="field"><label>Behaviour</label><select class="sel" data-mode>${Object.entries(MODE).map(([k,v])=>`<option value="${k}" ${tr.mode===k?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="fns">${tr.functions.map((f,i)=>fnRow(p,tr,f,i)).join('')}<button class="addfn" data-add="key">+ Add function</button></div>
+      <div class="dim" style="font-size:12.5px">${tr.functions[0]?.fn==='callToConference' ? 'Talk is on the key; listening to the conference is permanent.' : tr.functions[0]?.fn==='listenToPort' ? 'A listen key: press to monitor.' : tr.functions[0]?.fn==='callToPort' ? 'Talks straight to that port. They see your name and can Reply.' : ''}</div>`;
+  }
+  $('#ed').addEventListener('click', e => {
+    const p = byId[sel];
+    const k = e.target.closest('[data-key]'); if (k) { selKey = k.dataset.key==='reply' ? 'reply' : +k.dataset.key; renderEditor(); return; }
+    const go = e.target.closest('[data-go]'); if (go) { sel = go.dataset.go; selKey = null; renderPorts(); return; }
+    const clear = e.target.closest('[data-clear]'); if (clear) { p.triggers = p.triggers.filter(t=>!(t.kind==='key'&&t.key===+clear.dataset.clear)); renderAll(); return; }
+    const add = e.target.closest('[data-add]'); if (add) {
+      const kind = add.dataset.add; let tr;
+      if (kind==='key') { tr = p.triggers.find(t=>t.kind==='key'&&t.key===selKey); if (!tr) { tr = T('key',[],{key:selKey,mode:'ptt'}); p.triggers.push(tr); } }
+      else { tr = p.triggers.find(t=>t.kind===kind); if (!tr) { tr = T(kind,[]); p.triggers.push(tr); } }
+      const fn = fnsFor(p)[0]; tr.functions.push(F(fn, targetsFor(fn)[0]?.id)); renderAll(); return;
+    }
+    const rm = e.target.closest('[data-rm]'); if (rm) { const tr = trigOf(rm); tr.functions.splice(+rm.dataset.rm,1); renderAll(); }
+  });
+  $('#ed').addEventListener('change', e => {
+    const p = byId[sel]; const t = e.target;
+    if (t.matches('[data-mode]')) { const tr = p.triggers.find(x=>x.kind==='key'&&x.key===selKey); tr.mode = t.value; renderAll(); return; }
+    if (t.matches('[data-fnsel]')) { const tr = trigOf(t); const f = tr.functions[+t.dataset.fnsel]; f.fn = t.value; f.target = targetsFor(f.fn)[0]?.id; renderAll(); return; }
+    if (t.matches('[data-tgt]')) { const tr = trigOf(t); tr.functions[+t.dataset.tgt].target = t.value; renderAll(); return; }
+  });
+  $('#ed').addEventListener('input', e => { const t = e.target; if (t.matches('[data-lvl]')) { const tr = trigOf(t); tr.functions[+t.dataset.lvl].level = +t.value; t.nextElementSibling.textContent = fmtdb(+t.value); } });
+  function trigOf(el) { const p = byId[sel]; const row = el.closest('[data-kind]'); if (row) return p.triggers.find(t=>t.kind===row.dataset.kind); return p.triggers.find(t=>t.kind==='key'&&t.key===selKey); }
+  function renderPorts() { renderTable(); renderEditor(); }
+
+  // ---------- groups & conferences ----------
+  let selGC = 'show';
+  function renderGC() {
+    const items = [['Conferences','conference'],['Groups','group'],['IFBs','ifb']];
+    $('#gc-list').innerHTML = items.map(([t,ty]) => `<div class="grp">${t}</div>` + P.filter(p=>p.type===ty).map(p => `<button class="item ${p.id===selGC?'on':''}" data-id="${p.id}"><span class="sw ${p.type}" style="margin:0"></span><div class="m">${p.name}<span class="s">${p.type==='group' ? p.group.members.length+' members' : incoming(p).length+' in'}</span></div></button>`).join('')).join('');
+    const p = byId[selGC]; const X = expand();
+    const rows = new Map();
+    X.filter(x=>x.d===p.id).forEach(x => { const r = rows.get(x.s)||{id:x.s}; r.in = x; rows.set(x.s,r); });
+    X.filter(x=>x.s===p.id).forEach(x => { const r = rows.get(x.d)||{id:x.d}; r.out = x; rows.set(x.d,r); });
+    if (p.type==='group') p.group.members.forEach(m => rows.set(m,{id:m,member:true}));
+    const gateText = x => x.gate==='always' ? 'always' : x.gate.trigger.kind==='key' ? `key ${x.gate.trigger.key} on ${byId[x.gate.port].label}` : `${x.gate.trigger.kind} on ${byId[x.gate.port].label}`;
+    $('#gc-ed').innerHTML = `<div class="ed-head"><span class="sw ${p.type}" style="height:22px"></span><input class="name-in" value="${p.name}"><span class="badge">${TYPE[p.type]}</span></div>
+      ${p.type==='ifb' ? `<div class="dim">Program <b class="muted">${byId[p.ifb.program].label}</b>, dimmed <b class="muted">${p.ifb.dim} dB</b> while called, goes to <b class="muted">${byId[p.ifb.destination].label}</b>.</div>` : p.subtitle ? `<div class="dim">${p.subtitle}</div>` : ''}
+      <table class="tbl"><thead><tr><th>Port</th><th>${p.type==='ifb'?'Into it':'Talks in'}</th><th>Hears it</th><th>Level</th><th>Set where</th></tr></thead><tbody>
+      ${[...rows.values()].map(r => { const q = byId[r.id]; const i = r.in, o = r.out; const isLive = (i&&isOpen(i)&&i.kind!=='P') ; return `<tr><td><span class="sw ${q.type}"></span>${q.label}${q.alias?` <span class="dim">${q.alias}</span>`:''}</td><td>${i ? `<span class="cell ${i.kind} ${isLive?'live':''}">${i.kind==='P'?'Program':i.kind==='T'?'Key':i.kind==='V'?'Vox':'Always'}</span>` : r.member ? '<span class="dim">member</span>' : '<span class="dim">–</span>'}</td><td>${o ? `<span class="cell L">${o.gate==='always'?'Always':'Key'}</span>` : r.member ? '<span class="cell L">Always</span>' : '<span class="dim">–</span>'}</td><td class="num dim">${fmtdb((i||o||{level:0}).level||0)}</td><td class="dim" style="font-size:12.5px">${i ? gateText(i) : o ? gateText(o) : 'group members'} · <button class="go" style="color:var(--pl)" data-open="${(i||o)?.owner ?? q.id}">open</button></td></tr>`; }).join('')}
+      </tbody></table>
+      <div style="display:flex;gap:10px;align-items:center"><select class="sel" style="width:220px"><option>Add a port…</option>${P.filter(q=>!rows.has(q.id)&&q.id!==p.id&&!['conference','ifb','group'].includes(q.type)).map(q=>`<option>${q.label}${q.alias?' · '+q.alias:''}</option>`).join('')}</select><span class="dim" style="font-size:13px">${p.type==='conference'?'Adding a panel puts "Call to conference" on its next free key; an input or output gets it on Always.':p.type==='group'?'Adds a member.':'Adding a panel puts "Call to IFB" on its next free key.'}</span></div>`;
+  }
+  $('#gc-list').addEventListener('click', e => { const b = e.target.closest('.item'); if (b) { selGC = b.dataset.id; renderGC(); } });
+  $('#gc-ed').addEventListener('click', e => { const b = e.target.closest('[data-open]'); if (b) { sel = b.dataset.open; selKey = null; renderPorts(); go('ports'); } });
+
+  // ---------- matrix (derived, click → owner) ----------
+  function renderMatrix() {
+    const X = expand();
+    const S = P.filter(hasIn).filter(p=>p.type!=='group'); const D = P.filter(hasOut);
+    const sg = [['Panels',p=>p.type==='panel'],['Inputs',p=>p.type==='input'],['Conferences',p=>p.type==='conference'],['IFBs',p=>p.type==='ifb']].map(([t,f])=>[t,S.filter(f)]).filter(g=>g[1].length);
+    const dg = [['Panels',p=>p.type==='panel'],['Outputs',p=>p.type==='output'],['Conferences',p=>p.type==='conference'],['Groups',p=>p.type==='group'],['IFBs',p=>p.type==='ifb']].map(([t,f])=>[t,D.filter(f)]).filter(g=>g[1].length);
+    const CW = 30, HW = 180;
+    let h = `<thead><tr><th class="corner" rowspan="2" style="width:${HW}px"></th>${dg.map(([t,g])=>`<th class="grp" colspan="${g.length}" style="width:${g.length*CW}px">${t}</th>`).join('')}</tr><tr>`;
+    dg.forEach(([,g]) => g.forEach(d => h += `<th class="col"><span class="lbl">${d.label}</span></th>`)); h += '</tr></thead><tbody>';
+    $('#mx').style.cssText = `table-layout:fixed;width:${HW + CW*D.length}px`;
+    sg.forEach(([t,g]) => { h += `<tr class="grp"><th>${t}</th><td colspan="${D.length}"></td></tr>`; g.forEach(s => { h += `<tr><th>${s.label}${s.alias?` <span class="dim">${s.alias}</span>`:''}</th>`;
+      dg.forEach(([,cg]) => cg.forEach(d => { const xs = X.filter(x=>x.s===s.id&&x.d===d.id); const gx = d.type==='group' ? X.filter(x=>x.s===s.id&&x.fn?.fn==='callToGroup'&&x.fn.target===d.id) : [];
+        const x = xs[0]; const back = X.find(y=>y.s===d.id&&y.d===s.id&&y.kind==='L'); let k = x ? (x.kind==='T' && back && s.type==='panel' && d.type==='conference' ? 'TL' : x.kind) : (gx.length ? 'T' : '');
+        const isLive = x && isOpen(x) && x.kind!=='L' && x.kind!=='P'; h += `<td><span class="cell ${k} ${isLive?'live':''}" ${x?`data-owner="${x.owner}"`:gx.length?`data-owner="${s.id}"`:''} title="${s.label} → ${d.label}${x?` · ${fmtdb(x.level)} · set on ${byId[x.owner].label}`:''}">${k||'·'}</span></td>`; })); h += '</tr>'; }); });
+    $('#mx').innerHTML = h + '</tbody>';
+  }
+  $('#mx').addEventListener('click', e => { const c = e.target.closest('[data-owner]'); if (c) { sel = c.dataset.owner; selKey = null; renderPorts(); go('ports'); } });
+
+  // ---------- hardware ----------
+  function renderHW() {
+    $('#hw').innerHTML = NODES.map(n => `<div class="card"><div class="ch"><b>${n.name}</b><span class="muted" style="font-size:13.5px"><span class="dot ${n.online?'':'off'}"></span> ${n.online?'Online':'Offline'}</span></div>
+      <div class="dim" style="font-size:13px">${n.device} · <span class="num">${n.ip}</span> · ${n.ins} in, ${n.outs} out</div>
+      <div class="circ"><span class="hd">Use</span><span class="hd">Port</span><span class="hd">Pair</span><span class="hd">Trim</span>
+      ${['in','out'].map(dir => Array.from({length:dir==='in'?n.ins:n.outs},(_,i)=>i+1).map(i => { const on = n.use[dir].includes(i); return `<input type="checkbox" ${on?'checked':''}><input class="nm" value="${on?cname(n,dir,i):(dir==='in'?'Input ':'Output ')+i}" ${on?'':'disabled'}><input class="nm" value="${n.pairs[i]||''}" placeholder="–" style="width:90px" ${on?'':'disabled'}><span class="num dim">${on?'0 dB':''}</span>`; }).join('')).join('')}
+      </div><div class="dim" style="font-size:12.5px">Ticked channels become ports. Changing the set reconnects this node for a moment; changing functions does not.</div></div>`).join('') + `<div class="card" style="border-style:dashed;justify-content:center;color:var(--fg-3);font-size:13.5px">Nothing to pair. A node given this gateway's address registers itself and appears here.</div>`;
+  }
+
+  // ---------- live ----------
+  function renderLive() {
+    const X = expand(); const open = X.filter(x => isOpen(x) && x.kind!=='L' && x.kind!=='P' && x.gate!=='always');
+    const rows = P.filter(p=>['panel','input','output'].includes(p.type));
+    $('#live-t').innerHTML = `<thead><tr><th></th><th>Port</th><th>Open now</th><th>Calling it</th></tr></thead><tbody>${rows.map(p => { const mine = open.filter(x=>x.owner===p.id); const callers = open.filter(x=>x.d===p.id && x.owner!==p.id);
+      return `<tr class="lrow ${p.online?'':'dim'}"><td><span class="dot ${p.online?(mine.length?'hot':''):'off'}"></span></td><td>${p.label}${p.alias?` <span class="dim">${p.alias}</span>`:''}</td><td><div class="chips">${mine.map(x=>`<span class="cell ${x.kind} live">${x.gate.trigger.kind==='key'?'Key '+x.gate.trigger.key:'Vox'} → ${byId[x.fn?.target ?? x.d].label}</span>`).join('')||'<span class="dim">–</span>'}</div></td><td><div class="chips">${callers.map(x=>`<span class="cell">${byId[x.s].label}${x.gate.trigger.kind==='vox'?' (vox)':''}</span>`).join('')||'<span class="dim">–</span>'}</div></td></tr>`; }).join('')}</tbody>`;
+    const a = [];
+    P.filter(p=>p.type==='panel'&&!keyCount(p)).forEach(p=>a.push([`${p.label} has no keys`,'']));
+    P.filter(p=>p.type==='conference'&&!X.some(x=>x.d===p.id)).forEach(p=>a.push([`${p.label} has no talker`,'Nothing is routed into it.']));
+    P.filter(p=>p.type==='ifb').forEach(p=>{ if(!p.ifb.program)a.push([`${p.label} has no program`,'']); if(!X.some(x=>x.s===p.id))a.push([`${p.label} goes nowhere`,'']); });
+    P.filter(p=>p.type==='panel'&&!p.online&&keyCount(p)).forEach(p=>a.push([`${p.label} is offline`,`${p.alias||'Nobody'} has not picked it up.`]));
+    $('#attn-n').textContent = a.length; $('#attn-n').hidden = !a.length;
+    $('#attn').innerHTML = a.length ? a.map(([t,s])=>`<div class="it"><span class="dot warn"></span><div>${t}<small>${s}</small></div></div>`).join('') : '<div class="empty">Nothing right now.</div>';
+    $('#open').innerHTML = open.map(x=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px"><span>${byId[x.owner].label} <span class="dim">→ ${byId[x.fn?.target ?? x.d].label}</span></span><span class="dim num">${x.gate.trigger.kind==='vox'?'vox':'key '+x.gate.trigger.key}</span></div>`).join('') || '<div class="empty">Nothing open.</div>';
+    $('#n-live').innerHTML = open.length ? `<span class="badge hot">${open.length}</span>` : '';
+  }
+
+  // ---------- nav ----------
+  function go(tab) { document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(t=>t.hidden = t.id!=='tab-'+tab); }
+  $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) go(b.dataset.tab); });
+  function renderAll() { renderPorts(); renderGC(); renderMatrix(); renderLive(); $('#n-ports').textContent = P.length; $('#n-gc').textContent = P.filter(p=>['conference','group','ifb'].includes(p.type)).length; $('#n-hw').textContent = NODES.length; $('#gw-online').textContent = `${P.filter(p=>p.type==='panel'&&p.online).length} / ${P.filter(p=>p.type==='panel').length}`; }
+  renderAll(); renderHW();
+})();
+</script>
+</body>
+</html>
