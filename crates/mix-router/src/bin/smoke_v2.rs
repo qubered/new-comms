@@ -103,8 +103,18 @@ fn main(){
     assert!(h.clients[1].rms(0)<0.01,"replacement releases previous session's hot key");
     h.clients[4].tracks[0].amplitude=0.3;h.key(4,1,true);h.run(600);
     assert!(h.clients[1].rms(0)>0.15,"replacement station can key again");
+    // Parallel Always + key functions carry a source once, even with both gates open.
+    h.configure(vec![edge("a","b",json!("always"),"audio"),edge("a","b",key("a",1),"call")]);h.run(600);
+    assert!(h.clients[1].rms(0)>0.15&&h.clients[1].rms(0)<0.26,"parallel routes must not double amplitude");
+    h.clients[4].tracks[0].amplitude=0.0;h.clients[3].tracks[0].amplitude=0.4;
+    h.configure(vec![edge("a","b",json!("always"),"call"),edge("a","ifb",json!("always"),"interrupt"),edge("in1","ifb",json!("always"),"program"),edge("ifb","c",json!("always"),"audio")]);h.run(600);
+    assert!(h.clients[2].rms(0)>0.015&&h.clients[2].rms(0)<0.05,"connected silent interrupt still dims program");
+    let _=h.events.try_iter().count();
     h.send(json!({"cmd":"close","sessionId":"a-reconnected"}));h.run(600);
+    assert!(h.clients[2].rms(0)>0.2,"offline Always interrupt releases IFB program dim");
+    assert!(h.events.try_iter().any(|e|e["event"]=="portState"&&e["portId"]=="b"&&e["incoming"]==json!([])),"offline Always caller clears incoming");
     assert!(h.clients[1].rms(0)<0.01,"disconnect clears hot key and queued audio");
     println!("ok: gateway reconnect, stale control rejection, station replacement and disconnect");
+    println!("ok: parallel audio gain and silent/live versus offline Always call/IFB");
     println!("v2 smoke passed");
 }

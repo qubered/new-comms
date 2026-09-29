@@ -102,6 +102,7 @@ struct Port {
     vox_samples: usize,
     hang_ms: f32,
     loopback: bool,
+    connected: bool,
     reply: Option<usize>,
 }
 struct Route { source: usize, edges: Vec<usize>, gain: f32 }
@@ -132,7 +133,7 @@ impl Graph {
         let mut old: HashMap<_,_> = std::mem::take(&mut self.ports).into_iter().map(|p| (p.config.id.clone(),p)).collect();
         self.ports = configs.into_iter().map(|config| {
             let state = PortState { port_id: config.id.clone(), master_volume: config.station.as_ref().map_or(100.0, |s|s.master_volume), volumes: config.station.as_ref().map_or_else(HashMap::new, |s|s.volumes.clone()), ..Default::default() };
-            let mut p = old.remove(&config.id).unwrap_or(Port { config: config.clone(), state, attack_ms: 0.0, vox_energy: 0.0, vox_samples: 0, hang_ms: 0.0, loopback: false, reply: None });
+            let mut p = old.remove(&config.id).unwrap_or(Port { config: config.clone(), state, attack_ms: 0.0, vox_energy: 0.0, vox_samples: 0, hang_ms: 0.0, loopback: false, connected: false, reply: None });
             let mic_off = p.state.mic_off;
             p.state.keys.retain(|key,_| config.triggers.iter().any(|t|t.matches_key(key) && (!mic_off || !t.opens_mic(&config.id))));
             if let Some(s) = &config.station {
@@ -141,6 +142,9 @@ impl Graph {
             }
             p.state.volumes.retain(|id,_| indices.contains_key(id));
             if p.state.last_caller.as_ref().is_some_and(|id| !reply_targets.contains(id)) { p.state.last_caller=None; }
+            if p.config.kind!=config.kind || p.config.hardware.as_ref().map(|h|(&h.node_id,h.channel))!=config.hardware.as_ref().map(|h|(&h.node_id,h.channel)) {
+                p.connected=false;p.state.keys.clear();p.state.vox_open=false;
+            }
             p.config = config;
             p.reply = None;
             p
@@ -191,10 +195,20 @@ impl Graph {
         }
         true
     }
+    /// Session presence, not packet energy: a connected silent Always feed remains active.
+    pub fn connect(&mut self, id: &str) {
+        for p in &mut self.ports {
+            if p.config.id==id || p.config.hardware.as_ref().is_some_and(|h|h.node_id==id) {p.connected=true;}
+        }
+    }
+    fn source_active(&self, source:usize) -> bool {
+        let p=&self.ports[source];
+        !p.state.mic_off && (!matches!(p.config.kind.as_str(),"station"|"input") || p.connected)
+    }
     pub fn release(&mut self, id: &str) {
         for p in &mut self.ports {
             if p.config.id == id || p.config.hardware.as_ref().is_some_and(|h| h.node_id == id) {
-                p.state.keys.clear(); p.state.vox_open=false; p.attack_ms=0.0; p.hang_ms=0.0; p.vox_energy=0.0; p.vox_samples=0; p.loopback=false;
+                p.connected=false; p.state.keys.clear(); p.state.vox_open=false; p.attack_ms=0.0; p.hang_ms=0.0; p.vox_energy=0.0; p.vox_samples=0; p.loopback=false;
             }
         }
     }
@@ -221,7 +235,7 @@ impl Graph {
             p.vox_samples+=FRAME;
             if p.vox_samples<480 {continue;}
             let rms=(p.vox_energy/p.vox_samples as f32).sqrt();p.vox_energy=0.0;p.vox_samples=0;
-            let above = !p.state.mic_off && rms > gain(p.config.vox.threshold);
+            let above = p.connected && !p.state.mic_off && rms > gain(p.config.vox.threshold);
             if above { p.attack_ms += 10.0; if p.attack_ms >= p.config.vox.attack { p.state.vox_open=true; p.hang_ms=p.config.vox.hang; } }
             else { p.attack_ms=0.0; p.hang_ms=(p.hang_ms-10.0).max(0.0); if p.hang_ms == 0.0 || p.state.mic_off { p.state.vox_open=false; } }
         }
@@ -229,7 +243,7 @@ impl Graph {
         for calls in &mut self.calls { calls.clear(); }
         for i in 0..self.edges.len() {
             let e=&self.edges[i];
-            let open=self.gate_open(&e.gate,false) && !self.ports[e.source].state.mic_off;
+            let open=self.gate_open(&e.gate,false) && self.source_active(e.source);
             let (source,destination)=(e.source,e.destination);
             if open && e.role == "call" && !self.calls[destination].contains(&source) { self.calls[destination].push(source); }
             self.edges[i].open=open;
@@ -237,7 +251,7 @@ impl Graph {
         // Only the first-pass calls drive On Call. Calls opened here cannot chain.
         for i in 0..self.edges.len() {
             if matches!(&self.edges[i].gate,Gate::Trigger{trigger,..} if trigger.kind == "onCall") {
-                self.edges[i].open=self.gate_open(&self.edges[i].gate,true) && !self.ports[self.edges[i].source].state.mic_off;
+                self.edges[i].open=self.gate_open(&self.edges[i].gate,true) && self.source_active(self.edges[i].source);
             }
         }
         // Parallel functions retain their gates and roles, but each audio pair contributes once.
@@ -274,7 +288,7 @@ impl Graph {
         }
         for (source,p) in self.ports.iter().enumerate() {
             if let Some(destination)=p.reply {
-                if !p.state.mic_off && p.state.keys.get("reply").copied().unwrap_or(false) && !self.audible_sources[destination].contains(&source) {self.audible_sources[destination].push(source);}
+                if self.source_active(source) && p.state.keys.get("reply").copied().unwrap_or(false) && !self.audible_sources[destination].contains(&source) {self.audible_sources[destination].push(source);}
             }
         }
         for destination in 0..self.ports.len() {
@@ -286,7 +300,7 @@ impl Graph {
     fn add_source(&self,source:usize,listener:usize,frames:&HashMap<String,[f32;FRAME]>,out:&mut [f32;FRAME],scale:f32,depth:u8) {
         if depth>2 || scale==0.0 {return;}
         let p=&self.ports[source];
-        if p.state.mic_off {return;}
+        if !self.source_active(source) {return;}
         match p.config.kind.as_str() {
             "conference" | "ifb" => {
                 for route in &self.routes[source] {
@@ -299,7 +313,7 @@ impl Graph {
     }
     fn reply_gain(&self, source:usize, listener:usize) -> f32 {
         let port=&self.ports[source];
-        if port.reply!=Some(listener) || port.state.mic_off || !port.state.keys.get("reply").copied().unwrap_or(false) {return 0.0;}
+        if port.reply!=Some(listener) || !self.source_active(source) || !port.state.keys.get("reply").copied().unwrap_or(false) {return 0.0;}
         let level=port.config.triggers.iter().find(|t|t.kind=="reply").and_then(|t|t.functions.first()).and_then(|f|f.get("level")).and_then(|v|v.as_f64()).unwrap_or(0.0) as f32;
         gain(level)
     }
@@ -333,7 +347,7 @@ mod tests {
     fn edge(s: &str,d: &str,gate: serde_json::Value,role: &str) -> serde_json::Value { json!({"source":s,"destination":d,"level":0,"gate":gate,"role":role}) }
     fn key(p: &str) -> serde_json::Value { json!({"port":p,"trigger":{"kind":"key","key":1}}) }
     fn setup(ports: Vec<serde_json::Value>,edges: Vec<serde_json::Value>) -> Graph {
-        let mut g=Graph::default();g.configure(serde_json::from_value(json!(ports)).unwrap(),serde_json::from_value(json!(edges)).unwrap()).unwrap();g
+        let mut g=Graph::default();g.configure(serde_json::from_value(json!(ports)).unwrap(),serde_json::from_value(json!(edges)).unwrap()).unwrap();for p in &mut g.ports {p.connected=true;}g
     }
     fn frames(values: &[(&str,f32)]) -> HashMap<String,[f32;FRAME]> { values.iter().map(|(id,n)|(id.to_string(),[*n;FRAME])).collect() }
     fn heard(g: &Graph,id: &str,f: &HashMap<String,[f32;FRAME]>) -> f32 { let mut out=[0.0;FRAME];g.mix_for(id,f,&mut out);out[0] }
@@ -488,6 +502,36 @@ mod tests {
         let f=frames(&[("a",0.1),("mic",0.2)]);g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.2);
         press(&mut g,"a",true);g.prepare(&f);assert!((heard(&g,"b",&f)-0.12).abs()<1e-6);
         assert_eq!(g.edges.len(),8,"individual function metadata is retained");
+    }
+
+    #[test]
+    fn offline_always_call_releases_incoming_on_call_and_ifb_dim_but_silence_does_not() {
+        let mut input=config("mic","input");input["hardware"]=json!({"nodeId":"rack","channel":1});
+        let mut ifb=config("ifb","ifb");ifb["ifb"]=json!({"dim":-20.0});
+        let ports=vec![input,config("pgm","input"),config("b","station"),config("c","station"),ifb];
+        let edges=vec![edge("mic","b",json!("always"),"call"),edge("mic","ifb",json!("always"),"interrupt"),edge("pgm","ifb",json!("always"),"program"),edge("ifb","c",json!("always"),"audio"),edge("pgm","b",json!({"port":"b","trigger":{"kind":"onCall"}}),"audio")];
+        let mut g=Graph::default();g.configure(serde_json::from_value(json!(ports.clone())).unwrap(),serde_json::from_value(json!(edges.clone())).unwrap()).unwrap();
+        g.connect("pgm");g.connect("b");g.connect("c");
+        // Even stale buffered samples cannot make an offline hardware source available.
+        let f=frames(&[("mic",0.1),("pgm",0.2)]);g.prepare(&f);
+        assert!(g.state("b").unwrap().incoming.is_empty());assert_eq!(heard(&g,"b",&f),0.0);assert_eq!(heard(&g,"c",&f),0.2);
+        g.connect("rack");let silent=frames(&[("pgm",0.2)]);g.prepare(&silent);
+        assert_eq!(g.state("b").unwrap().incoming,vec!["mic"]);assert_eq!(heard(&g,"b",&silent),0.2);assert!((heard(&g,"c",&silent)-0.02).abs()<1e-6);
+        g.configure(serde_json::from_value(json!(ports)).unwrap(),serde_json::from_value(json!(edges)).unwrap()).unwrap();g.prepare(&silent);
+        assert_eq!(g.state("b").unwrap().incoming,vec!["mic"],"routing edits preserve established session presence");
+        g.release("rack");g.prepare(&f);
+        assert!(g.state("b").unwrap().incoming.is_empty());assert_eq!(heard(&g,"b",&f),0.0);assert_eq!(heard(&g,"c",&f),0.2);
+        g.connect("rack");g.prepare(&silent);assert_eq!(g.state("b").unwrap().incoming,vec!["mic"]);
+    }
+
+    #[test]
+    fn parallel_program_and_interrupt_take_maximum_after_dim() {
+        let mut ifb=config("ifb","ifb");ifb["ifb"]=json!({"dim":-20.0});
+        let mut interrupt=edge("mic","ifb",key("a"),"interrupt");interrupt["level"]=json!(-6.0);
+        let mut g=setup(vec![config("a","station"),config("b","station"),config("mic","input"),ifb],vec![edge("mic","ifb",json!("always"),"program"),interrupt,edge("ifb","b",json!("always"),"audio")]);
+        let f=frames(&[("mic",0.2)]);g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.2);
+        press(&mut g,"a",true);g.prepare(&f);
+        assert!((heard(&g,"b",&f)-0.2*gain(-6.0)).abs()<1e-6,"program dim applies before choosing the strongest parallel route");
     }
 
 }

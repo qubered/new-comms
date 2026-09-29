@@ -138,8 +138,10 @@ impl Router {
                 let graph=self.graph.get_or_insert_with(graph::Graph::default);
                 if let Err(error)=graph.configure(ports,crosspoints) {eprintln!("mix-router: invalid graph: {error}");return;}
                 // A changed in-use set needs a new offer, while routing edits keep sessions alive.
-                for peer in self.peers.values_mut() {
-                    if peer.ports()!=graph.session_ports(&peer.pack_id) {peer.close("renegotiate");}
+                for (session,peer) in &mut self.peers {
+                    if self.by_pack.get(&peer.pack_id)!=Some(session) {continue;}
+                    if peer.ports()!=graph.session_ports(&peer.pack_id) {graph.release(&peer.pack_id);peer.close("renegotiate");}
+                    else if peer.connected {graph.connect(&peer.pack_id);}
                 }
                 self.graph_states.retain(|id,_| graph.config(id).is_some());
                 self.frames.retain(|id,_|graph.config(id).is_some());
@@ -213,6 +215,7 @@ impl Router {
             }
             Command::Close { session_id } => {
                 if let Some(peer) = self.peers.get_mut(&session_id) {
+                    if self.by_pack.get(&peer.pack_id)==Some(&session_id) {if let Some(graph)=&mut self.graph {graph.release(&peer.pack_id);}}
                     peer.close("requested");
                 }
             }
@@ -319,6 +322,8 @@ impl Router {
         for (session, pack, event) in applied {
             match event {
                 PeerEvent::Connected => {
+                    if self.by_pack.get(&pack)!=Some(&session) {continue;}
+                    if let Some(graph)=&mut self.graph {graph.connect(&pack);}
                     emit(&Event::Connected {
                         session_id: &session,
                         pack_id: &pack,
