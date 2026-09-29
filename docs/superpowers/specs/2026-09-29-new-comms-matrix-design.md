@@ -13,7 +13,7 @@ you want to (Route Audio).
 
 Rev 3 replaces rev 2's "crosspoint is the config" with "function on a trigger is the
 config"; everything agreed earlier (six keys, Reply, operator volumes, IFB with dim,
-listen keys, dB levels, pair names, circuits in use, no conference-of-conferences) is
+listen keys, dB levels, short names for channels, circuits in use, no conference-of-conferences) is
 kept.
 
 ## 1. Ports
@@ -35,7 +35,7 @@ Port {
   alias?        // who/what it is right now: "Priya", "Truck". Shown small.
   subtitle?     // sub text
   type: "panel" | "input" | "output" | "conference" | "group" | "ifb"
-  hardware?:    { nodeId, channel, pair?, trim: dB }        // input, output
+  hardware?:    { nodeId, channel, shortName?, trim: dB }   // input, output
   panel?:       { pin?, masterVolume, volumes: {[portId]: 0..100}, replyMode: KeyMode,
                   vox?: { threshold: dB, hang: ms } }
   group?:       { members: portId[] }                       // panels and outputs
@@ -222,7 +222,7 @@ audible), `pong`.
 
 A node registers with its interface's channel counts. In Manager → Hardware you tick
 which channels are **in use**; each becomes an input or output port with its own trim,
-and an in and an out can share a **pair** name ("Truck" → "Truck in", "Truck out").
+and a channel can be given a **short name** ("Truck" → "Truck in", "Truck out").
 The node carries one mono Opus track per port in use; changing the in-use set
 renegotiates that node's session, changing functions does not.
 
@@ -234,7 +234,7 @@ renegotiates that node's session, changing functions does not.
 - **Groups & conferences**: conferences, groups and IFBs with their members as derived
   from other ports' functions (T / L / interrupt / program), editable from here too.
 - **Matrix**: the derived grid, editable.
-- **Hardware**: nodes, channels in use, pairs, trims.
+- **Hardware**: nodes, channels in use, short names, trims.
 - **Live**: keys down, vox open, last callers; Needs attention (the constraints in §4
   plus node offline, panel offline with keys).
 

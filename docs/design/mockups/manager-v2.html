@@ -220,7 +220,7 @@ table.mx{border-collapse:separate;border-spacing:0}
     </section>
 
     <section class="tab" id="tab-hardware" hidden>
-      <div class="head"><div><h1>Hardware</h1><div class="sub">A node offers its interface's channels. Tick the ones in use; each becomes an input or output port. Give an in and an out a shared name to show them as a pair.</div></div></div>
+      <div class="head"><div><h1>Hardware</h1><div class="sub">A node offers its interface's channels. Tick the ones in use; each becomes an input or output port. Give a channel a short name and its ports are called "Truck in" and "Truck out".</div></div></div>
       <div class="cards" id="hw"></div>
     </section>
 
@@ -390,7 +390,7 @@ table.mx{border-collapse:separate;border-spacing:0}
     if (p.type==='input'||p.type==='output') { const n = NODES.find(n=>n.id===p.hardware.node); h += `<section class="blk"><h3>Hardware</h3><div class="fields">
         <div class="field"><label>Node</label><input class="in" value="${n.name}" readonly></div>
         <div class="field"><label>Channel</label><input class="in" value="${p.type==='input'?'Input':'Output'} ${p.hardware.channel}" readonly></div>
-        <div class="field"><label>Pair name</label><input class="in" value="${p.hardware.pair}" placeholder="e.g. Truck"></div>
+        <div class="field"><label>Short name</label><input class="in" value="${p.hardware.pair}" placeholder="e.g. Truck"><div class="help">The in and out ports are called "&lt;short name&gt; in" and "&lt;short name&gt; out".</div></div>
         <div class="field"><label>Trim</label><div style="display:flex;align-items:center;gap:8px"><input type="range" min="-24" max="24" step="0.5" value="${p.hardware.trim}" style="flex:1"><b class="num">${fmtdb(p.hardware.trim)}</b></div></div>
       </div></section>`; }
     if (p.type==='group') h += `<section class="blk"><h3>Members</h3><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${p.group.members.map(m=>`<span class="badge" style="height:28px;font-size:13px;color:var(--fg)">${byId[m].label}</span>`).join('')}<select class="sel" style="width:160px;height:30px"><option>Add…</option></select></div><div class="help dim" style="font-size:12.5px">A call to this group reaches every member at once. Members do not hear each other through it.</div></section>`;
@@ -482,9 +482,9 @@ table.mx{border-collapse:separate;border-spacing:0}
   function renderHW() {
     $('#hw').innerHTML = NODES.map(n => `<div class="card"><div class="ch"><b>${n.name}</b><span class="muted" style="font-size:13.5px"><span class="dot ${n.online?'':'off'}"></span> ${n.online?'Online':'Offline'}</span></div>
       <div class="dim" style="font-size:13px">${n.device} · <span class="num">${n.ip}</span> · ${n.ins} in, ${n.outs} out</div>
-      <div class="circ"><span class="hd">Use</span><span class="hd">Port</span><span class="hd">Pair</span><span class="hd">Trim</span>
+      <div class="circ"><span class="hd">Use</span><span class="hd">Port</span><span class="hd">Short name</span><span class="hd">Trim</span>
       ${['in','out'].map(dir => Array.from({length:dir==='in'?n.ins:n.outs},(_,i)=>i+1).map(i => { const on = n.use[dir].includes(i); return `<input type="checkbox" ${on?'checked':''}><input class="nm" value="${on?cname(n,dir,i):(dir==='in'?'Input ':'Output ')+i}" ${on?'':'disabled'}><input class="nm" value="${n.pairs[i]||''}" placeholder="–" style="width:90px" ${on?'':'disabled'}><span class="num dim">${on?'0 dB':''}</span>`; }).join('')).join('')}
-      </div><div class="dim" style="font-size:12.5px">Ticked channels become ports. Changing the set reconnects this node for a moment; changing functions does not.</div></div>`).join('') + `<div class="card" style="border-style:dashed;justify-content:center;color:var(--fg-3);font-size:13.5px">Nothing to pair. A node given this gateway's address registers itself and appears here.</div>`;
+      </div><div class="dim" style="font-size:12.5px">Ticked channels become ports. Changing the set reconnects this node for a moment; changing functions does not.</div></div>`).join('') + `<div class="card" style="border-style:dashed;justify-content:center;color:var(--fg-3);font-size:13.5px">Nothing to set up. A node given this gateway's address registers itself and appears here.</div>`;
   }
 
   // ---------- live ----------
