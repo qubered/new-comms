@@ -84,9 +84,6 @@ tr.offline .pk{color:var(--fg-3)}
 .cell.src{background:none;border:1px dashed var(--line-2);color:var(--fg-2)}
 .cell.muted{background:none;color:var(--fg-3);text-decoration:line-through}
 tr.offline .cell{opacity:.4}
-.editing .cell{cursor:pointer}
-.editing .cell:hover{border-color:var(--pl)}
-.editing .cell.none{color:var(--fg-3)}
 .legend{font-size:13px;color:var(--fg-3);margin:8px 2px 0}
 .rail{display:flex;flex-direction:column;gap:22px}
 .rail h2{margin:0 0 8px;font-size:14px;font-weight:600;color:var(--fg-2);display:flex;align-items:center;gap:8px}
@@ -219,7 +216,6 @@ section.blk>h3{margin:0;font-size:14px;font-weight:600;color:var(--fg-2)}
     <section class="tab" id="tab-live">
       <div class="head">
         <div><h1>Live</h1><div class="sub" id="live-sub">Packs down the side, channels across the top. A red cell is someone keyed right now. Click a pack name to open it.</div></div>
-        <button class="btn" id="edit-toggle">Edit assignments</button>
       </div>
       <div class="summary" id="summary"></div>
       <div class="live">
@@ -298,7 +294,7 @@ section.blk>h3{margin:0;font-size:14px;font-weight:600;color:var(--fg-2)}
   const keyed = {rack:new Set(['prod'])};
   const pgmMuted = {a2:new Set(['pgm'])};
   const started = {};
-  let editing = false, selPack = 'sm', selCh = 'dir';
+  let selPack = 'sm', selCh = 'dir';
 
   // ---------- nav ----------
   function go(tab) {
@@ -313,7 +309,7 @@ section.blk>h3{margin:0;font-size:14px;font-weight:600;color:var(--fg-2)}
   // ---------- live ----------
   function cellFor(p, c) {
     const m = p.a[c.id];
-    if (!m) return `<span class="cell none" data-p="${p.id}" data-c="${c.id}">${editing ? '+' : '·'}</span>`;
+    if (!m) return `<span class="cell none">·</span>`;
     if (m === 'source') return `<span class="cell src" data-p="${p.id}" data-c="${c.id}">Feed</span>`;
     if (c.type === 'pgm') { const mu = pgmMuted[p.id] && pgmMuted[p.id].has(c.id); return `<span class="cell ${mu ? 'muted' : ''}" data-p="${p.id}" data-c="${c.id}">${mu ? 'Off' : (m === 'toggle' ? 'Listen*' : 'Listen')}</span>`; }
     const on = keyed[p.id] && keyed[p.id].has(c.id);
@@ -329,7 +325,6 @@ section.blk>h3{margin:0;font-size:14px;font-weight:600;color:var(--fg-2)}
       <tbody>${people.map(row).join('')}
       <tr class="group"><th>Hardware</th><td colspan="${CH.length}"></td></tr>
       ${hw.map(row).join('')}</tbody>`;
-    $('#mwrap').classList.toggle('editing', editing);
   }
   function renderSummary() {
     const online = PACKS.filter(p => p.online).length, talking = Object.values(keyed).reduce((n,s) => n + s.size, 0);
@@ -361,21 +356,7 @@ section.blk>h3{margin:0;font-size:14px;font-weight:600;color:var(--fg-2)}
   }
   function renderLive() { renderMatrix(); renderSummary(); renderTalkers(); renderAttention(); counts(); }
   $('#matrix').addEventListener('click', e => {
-    const open = e.target.closest('[data-open]'); if (open) { selPack = open.dataset.open; renderPacks(); go('packs'); return; }
-    if (!editing) return;
-    const cell = e.target.closest('.cell'); if (!cell) return;
-    const p = PACKS.find(x => x.id === cell.dataset.p), c = chById[cell.dataset.c]; const m = p.a[c.id];
-    if (p.type === 'hardware') { if (m) delete p.a[c.id]; else p.a[c.id] = c.type === 'pgm' ? 'source' : 'latch'; }
-    else if (c.type === 'pgm') p.a[c.id] = !m ? 'always' : m === 'always' ? 'toggle' : undefined;
-    else p.a[c.id] = !m ? 'auto' : m === 'auto' ? 'ptt' : m === 'ptt' ? 'latch' : undefined;
-    if (!p.a[c.id]) delete p.a[c.id];
-    renderLive(); renderPacks(); renderChannels();
-  });
-  $('#edit-toggle').addEventListener('click', e => {
-    editing = !editing;
-    e.currentTarget.textContent = editing ? 'Done' : 'Edit assignments'; e.currentTarget.classList.toggle('primary', editing);
-    $('#live-sub').textContent = editing ? 'Click a cell to add that pack to the channel. Keep clicking to change how the key behaves (tap/hold, hold, tap) and then to remove it.' : 'Packs down the side, channels across the top. A red cell is someone keyed right now. Click a pack name to open it.';
-    renderMatrix();
+    const open = e.target.closest('[data-open]'); if (open) { selPack = open.dataset.open; renderPacks(); go('packs'); }
   });
   const humans = () => PACKS.filter(p => p.type === 'human' && p.online);
   setInterval(() => {
