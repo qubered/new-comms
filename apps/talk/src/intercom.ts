@@ -54,6 +54,8 @@ export class Intercom {
   private sessionId?: string;
   private mic?: MediaStream;
   private micEnabled = true;
+  private micRequest = 0;
+  private pendingMic?: { deviceId?: string; result: Promise<boolean> };
   private silenceContext?: AudioContext;
   private silenceStream?: MediaStream;
   private stopped = false;
@@ -110,6 +112,9 @@ export class Intercom {
 
   /** Asks for the mic and connects. `pin` may be supplied here once it has been verified. */
   async start(pin?: string): Promise<void> {
+    if (this.stopped) return;
+    // Keep this before every await: Safari requires audio creation/resume in the tap.
+    this.ensureSilence();
     if (pin) this.pin = pin;
     this.startTicker();
     this.enterAudioSession();
@@ -118,7 +123,8 @@ export class Intercom {
       this.mic = this.micOverride;
       this.setMic(true);
     } else {
-      await this.acquireMic(loadPrefs().inputId);
+      // Permission prompts may remain unanswered forever. Listening must start now.
+      void this.acquireMic(loadPrefs().inputId);
     }
     if (this.stopped) return;
     void this.audio.play().catch(() => {});
@@ -129,6 +135,7 @@ export class Intercom {
 
   stop(): void {
     this.stopped = true;
+    this.micRequest += 1;
     clearTimeout(this.retry);
     document.removeEventListener("visibilitychange", this.onVisibility);
     window.removeEventListener("online", this.onOnline);
@@ -218,7 +225,32 @@ export class Intercom {
    * are already connected, swaps it in without renegotiating. Returns whether one was opened.
    */
   async acquireMic(deviceId?: string): Promise<boolean> {
+    if (this.stopped) return false;
     if (this.micOverride) return true;
+    if (this.pendingMic?.deviceId === deviceId && this.pendingMic)
+      return this.pendingMic.result;
+    const request = ++this.micRequest;
+    const capture = this.acquireMicNow(deviceId, request);
+    // Let device controls recover even when a permission prompt is left open. The capture
+    // may still complete later; acquireMicNow adopts it only while this request is current.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const result = Promise.race([
+      capture,
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), 8000);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    this.pendingMic = { deviceId, result };
+    void capture.finally(() => {
+      if (request === this.micRequest) this.pendingMic = undefined;
+    });
+    return result;
+  }
+
+  private async acquireMicNow(
+    deviceId: string | undefined,
+    request: number,
+  ): Promise<boolean> {
     const base = {
       channelCount: 1,
       echoCancellation: true,
@@ -233,10 +265,12 @@ export class Intercom {
         stream = await navigator.mediaDevices.getUserMedia({ audio });
         break;
       } catch {
+        if (this.stopped || request !== this.micRequest) return false;
         /* try the default, then give up */
       }
     }
     if (!stream) {
+      if (this.stopped || request !== this.micRequest) return false;
       this.setMic(false);
       if (!this.stopped)
         void this.sender
@@ -244,17 +278,23 @@ export class Intercom {
           .catch(() => {});
       return false;
     }
-    if (this.stopped) {
+    if (this.stopped || request !== this.micRequest) {
       stream.getTracks().forEach((track) => track.stop());
+      return false;
+    }
+    const track = stream
+      .getAudioTracks()
+      .find((candidate) => candidate.readyState === "live");
+    if (!track) {
+      stream.getTracks().forEach((candidate) => candidate.stop());
       return false;
     }
     const previous = this.mic;
     this.mic = stream;
-    const track = stream.getAudioTracks()[0]!;
     track.enabled = this.micEnabled;
     // If the device disappears, or the OS ends capture, listening carries on without it.
     track.addEventListener("ended", () => {
-      if (this.mic === stream) {
+      if (this.mic === stream && !this.stopped) {
         this.setMic(false);
         void this.sender
           ?.replaceTrack(this.ensureSilence().getAudioTracks()[0]!)
@@ -277,12 +317,19 @@ export class Intercom {
     if (this.sender)
       await this.sender
         .replaceTrack(
-          this.micEnabled ? track : this.ensureSilence().getAudioTracks()[0]!,
+          this.micEnabled && !track.muted
+            ? track
+            : this.ensureSilence().getAudioTracks()[0]!,
         )
         .catch(() => {});
     previous?.getTracks().forEach((old) => old.stop());
-    this.setMic(true);
-    return true;
+    if (this.stopped || request !== this.micRequest) {
+      stream.getTracks().forEach((candidate) => candidate.stop());
+      return false;
+    }
+    const available = track.readyState === "live" && !track.muted;
+    this.setMic(available);
+    return available;
   }
 
   /** Switch microphone. The choice is remembered for next time. */
