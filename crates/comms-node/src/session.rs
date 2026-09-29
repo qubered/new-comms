@@ -117,7 +117,13 @@ fn pump(rtc: &mut Rtc, socket: &UdpSocket, local: SocketAddr, tracks: &mut [Trac
     let started = Instant::now();
     loop {
         for update in p.updates.try_iter() {
-            let next = selection(&update?);
+            // Registration is control-plane discovery. A gateway outage must not
+            // tear down audio that is still flowing directly to the mixer.
+            let ports = match update {
+                Ok(ports) => ports,
+                Err(error) => { eprintln!("registration failed: {error}; keeping current audio session"); continue; }
+            };
+            let next = selection(&ports);
             if !same_selection(&selected, &next) { return Ok(()); }
         }
         let now = Instant::now();
@@ -202,5 +208,23 @@ mod tests {
         let update: Reply = serde_json::from_str(r#"{"type":"device","ports":[{"portId":"in3","direction":"input","channel":3,"trim":6},{"portId":"out7","direction":"output","channel":7,"trim":-3}]}"#).unwrap();
         let Reply::Device { ports } = update else { panic!() };
         assert!(same_selection(&a, &ports));
+    }
+
+    #[test]
+    fn registration_outage_keeps_session_until_a_successful_selection_change() {
+        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let local = socket.local_addr().unwrap();
+        let mut rtc = RtcConfig::new().set_crypto_provider(Arc::new(str0m::crypto::from_feature_flags())).build(Instant::now());
+        let devices = Devices { input: None, output: None, name: "test".into(), input_channels: 1, output_channels: 0 };
+        let ports = vec![Port { id: "in1".into(), kind: "input".into(), hardware: crate::Hardware { channel: 1 } }];
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(Err("connection refused".into())).unwrap();
+        tx.send(Err("request timed out".into())).unwrap();
+        tx.send(Ok(ports.clone())).unwrap();
+        // After recovery, a deliberate channel removal should still end the session.
+        tx.send(Ok(vec![])).unwrap();
+        let params = Params { gateway: "http://127.0.0.1", node_id: "rack", local_ip: local.ip(), devices: &devices, ports: &ports, updates: &rx };
+        assert!(pump(&mut rtc, &socket, local, &mut [], &params).is_ok());
+        assert!(rx.try_recv().is_err(), "must process recovered inventory after transient errors");
     }
 }
