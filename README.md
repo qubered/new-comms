@@ -4,9 +4,21 @@ Comms anyone can run on devices they already own. Open Talk on phones and laptop
 
 The [v2 spec](docs/superpowers/specs/2026-09-29-new-comms-matrix-design.md) and [rebuild plan](docs/superpowers/plans/2026-09-29-new-comms-matrix-rebuild-plan.md) describe the port model. The old channel-based application is preserved at the `v1-channels` tag.
 
+## User guide
+
+The [complete user guide](website/docs/welcome.md) covers installation, configuration, operator workflows, hardware, show-day checks, troubleshooting and the reasoning behind the system. It includes screenshots and worked examples.
+
+```bash
+npm ci
+npm run docs:build
+npm run docs:serve -- --port 3000
+```
+
+Open `http://localhost:3000/` (or `http://<computer-ip>:3000/` on the LAN). The guide is a standalone Docusaurus site with local search. `npm run docs` starts its editing preview; `website/build/` is the static output.
+
 ## Start a show
 
-Install Node 22+, the Rust toolchain in `rust-toolchain.toml`, and libopus (`brew install opus` on macOS). Linux audio nodes also need the ALSA development libraries.
+Install Node 22.12+, the Rust toolchain in `rust-toolchain.toml`, and libopus (`brew install opus` on macOS). Linux audio nodes also need the ALSA development libraries.
 
 ```bash
 npm install
