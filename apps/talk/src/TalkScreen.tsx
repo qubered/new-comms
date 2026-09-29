@@ -12,6 +12,8 @@ import type { Intercom, Status, StationPeerState } from "./intercom.ts";
 import { TopBar } from "./TopBar.tsx";
 import {
   alwaysListens,
+  conferenceTalkers,
+  keyOpensMic,
   heardSources,
   keyTarget,
   stationKeys,
@@ -242,9 +244,7 @@ export function TalkScreen({
               <>
                 {stationKeys(pack).map((key) => {
                   const target = keyTarget(pack, key.key, ports);
-                  const listenOnly = key.functions.every(
-                    (fn) => fn.fn === "listenToPort" || fn.fn === "routeAudio",
-                  );
+                  const listenOnly = !keyOpensMic(pack, key);
                   const heard = target && state?.audible.includes(target.id);
                   return (
                     <KeyTile
@@ -256,8 +256,9 @@ export function TalkScreen({
                       held={held[key.key]}
                       ownLevel={levels[pack.id] ?? 0}
                       talkers={
-                        heard
-                          ? [
+                        heard && target.type === "conference"
+                          ? conferenceTalkers(pack, target, ports, crosspoints, live, levels)
+                          : heard ? [
                               {
                                 name: target.label,
                                 level: levels[target.id] ?? 0,
