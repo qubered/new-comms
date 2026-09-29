@@ -122,7 +122,14 @@ export class Gateway extends EventEmitter {
         this.sessions.delete(event.sessionId);
         // A newer session may already own the pack; only clear if none remains.
         const stillHeld = [...this.sessions.values()].includes(event.packId);
-        if (!stillHeld) this.patchLive(event.packId, { connected: false, keyed: {}, client: undefined });
+        if (!stillHeld) {
+          this.patchLive(event.packId, { connected: false, keyed: {}, client: undefined });
+          const node = this.packs.find((p) => p.id === event.packId)?.device;
+          if (node) {
+            node.lastSeen = Date.now();
+            this.pushConfig();
+          }
+        }
         break;
       }
       case "packState": {
