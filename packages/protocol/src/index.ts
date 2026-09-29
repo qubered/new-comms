@@ -46,3 +46,4 @@ export function applyEvent(state: Snapshot | null, event: ServerEvent): Snapshot
 export * from './routing.ts';
 export * from './migration.ts';
 export * from './demo.ts';
+export * from './showEvents.ts';

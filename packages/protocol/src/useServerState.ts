@@ -54,3 +54,32 @@ export function useServerState(base = "/api/v1"): ServerState {
 
   return { state, online, levels };
 }
+
+import { applyShowEvent, type ShowSnapshot, type ShowEvent } from './index.ts';
+export function useShowState(base = '/api/v2') {
+  const [state, setState] = useState<ShowSnapshot | null>(null);
+  const [online, setOnline] = useState(false);
+  const [levels, setLevels] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let source: EventSource | undefined, retry: ReturnType<typeof setTimeout> | undefined;
+    let current: ShowSnapshot | null = null, stopped = false;
+    const reconnect = () => { source?.close(); setOnline(false); setLevels({}); if (!stopped) { clearTimeout(retry); retry = setTimeout(open, 1000); } };
+    const open = () => {
+      source = new EventSource(`${base}/events`);
+      source.onopen = () => setOnline(true);
+      source.onerror = reconnect;
+      source.onmessage = message => {
+        try {
+          const event = JSON.parse(message.data) as ShowEvent;
+          if (event.type === 'levels') { setLevels(event.levels); return; }
+          const next = applyShowEvent(current, event);
+          if (next === 'resync') { current = null; reconnect(); return; }
+          current = next; setState(next);
+        } catch { reconnect(); }
+      };
+    };
+    open();
+    return () => { stopped = true; clearTimeout(retry); source?.close(); };
+  }, [base]);
+  return { state, online, levels };
+}
