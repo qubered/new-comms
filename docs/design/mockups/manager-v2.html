@@ -32,7 +32,7 @@ button:disabled{cursor:default;opacity:.45}
 .btn.quiet{background:none;border-color:transparent;color:var(--fg-2)}
 .btn.sm{height:28px;padding:0 9px;font-size:13px}
 .sw{display:inline-block;width:3px;height:15px;border-radius:1px;vertical-align:-2px;margin-right:8px;background:var(--line-2);flex:none}
-.sw.conference{background:var(--pl)} .sw.panel{background:var(--ok)} .sw.input,.sw.output{background:var(--pgm)} .sw.group{background:var(--direct)} .sw.ifb{background:var(--ifb)}
+.sw.conference{background:var(--pl)} .sw.interface{background:var(--ok)} .sw.input,.sw.output{background:var(--pgm)} .sw.group{background:var(--direct)} .sw.ifb{background:var(--ifb)}
 
 .shell{display:grid;grid-template-columns:200px 1fr;min-height:100vh}
 .side{border-right:1px solid var(--line);padding:18px 12px 16px;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;height:100vh}
@@ -93,7 +93,7 @@ section.blk>h3 .dim{font-weight:400}
 .trig .mode{padding-top:3px}
 .nothing{color:var(--fg-3);font-size:13px;padding-top:6px}
 
-/* beltpack face for panel keys */
+/* beltpack face for interface keys */
 .bp{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:420px}
 .bpkey{position:relative;border-radius:9px;background:var(--raised);padding:10px 12px 10px 14px;min-height:64px;text-align:left;display:flex;flex-direction:column;gap:3px;border:1px solid transparent}
 .bpkey:hover{background:var(--raised-2)} .bpkey.on{border-color:var(--pl)}
@@ -199,7 +199,7 @@ table.mx{border-collapse:separate;border-spacing:0}
       </div>
       <div class="toolbar">
         <input placeholder="Search" id="p-search" aria-label="Search ports">
-        <span class="seg" id="p-filter"><button class="on" data-f="all">All</button><button data-f="panel">Panels</button><button data-f="input">Inputs</button><button data-f="output">Outputs</button><button data-f="virtual">Conferences, groups, IFBs</button></span>
+        <span class="seg" id="p-filter"><button class="on" data-f="all">All</button><button data-f="interface">Interfaces</button><button data-f="input">Inputs</button><button data-f="output">Outputs</button><button data-f="virtual">Conferences, groups, IFBs</button></span>
         <span class="dim" id="p-count"></span>
       </div>
       <div class="ports">
@@ -220,7 +220,7 @@ table.mx{border-collapse:separate;border-spacing:0}
     </section>
 
     <section class="tab" id="tab-hardware" hidden>
-      <div class="head"><div><h1>Hardware</h1><div class="sub">A node offers its interface's channels. Tick the ones in use; each becomes an input or output port. Give a channel a short name and its ports are called "Truck in" and "Truck out".</div></div></div>
+      <div class="head"><div><h1>Hardware</h1><div class="sub">A node offers its hardware channels. Tick the ones in use; each becomes an input or output port. Give a channel a short name and its ports are called "Truck in" and "Truck out".</div></div></div>
       <div class="cards" id="hw"></div>
     </section>
 
@@ -246,10 +246,10 @@ table.mx{border-collapse:separate;border-spacing:0}
   const T = (kind, functions=[], extra={}) => ({kind, functions, ...extra});
   const F = (fn, target, level=0) => ({fn, target, level});
 
-  // panels
+  // interfaces
   [['dir','Director','Alex'],['sm','Stage Manager','Priya'],['td','TD','Sam'],['cam1','Camera 1',''],['cam2','Camera 2',''],['cam3','Camera 3',''],['lx','Lighting','Jo'],['a1','Audio A1',''],['a2','Audio A2',''],['foh','FOH',''],['fly','Flys',''],['gfx','Graphics','']]
-    .forEach(([id,name,alias],i) => port({id,name:`Phone ${String(i+1).padStart(2,'0')}`,label:name,alias,subtitle:'',type:'panel',online:!['cam3','gfx'].includes(id),
-      panel:{pin:id==='dir'?'1234':'',master:80,replyMode:'ptt',vox:{threshold:-40,attack:20,hang:600}}}));
+    .forEach(([id,name,alias],i) => port({id,name:`Phone ${String(i+1).padStart(2,'0')}`,label:name,alias,subtitle:'',type:'interface',online:!['cam3','gfx'].includes(id),
+      interface:{pin:id==='dir'?'1234':'',master:80,replyMode:'ptt',vox:{threshold:-40,attack:20,hang:600}}}));
   // hardware
   const NODES = [
     {id:'rack',name:'Stage rack',device:'Focusrite Scarlett 18i20',ip:'10.0.0.31',online:true,ins:8,outs:8,use:{in:[1,2,3,4],out:[1,2,5,7]},pairs:{1:'Truck',2:'Announce'}},
@@ -267,7 +267,7 @@ table.mx{border-collapse:separate;border-spacing:0}
   port({id:'lxc',name:'Lighting',label:'LX',alias:'',subtitle:'Jo and SM',type:'conference'});
   port({id:'pgm',name:'Program',label:'PGM',alias:'',subtitle:'Show mix',type:'conference'});
   port({id:'gcams',name:'All cameras',label:'Cams all',alias:'',subtitle:'',type:'group',group:{members:['cam1','cam2','cam3']}});
-  port({id:'gall',name:'All call',label:'All',alias:'',subtitle:'',type:'group',group:{members:P.filter(p=>p.type==='panel').map(p=>p.id)}});
+  port({id:'gall',name:'All call',label:'All',alias:'',subtitle:'',type:'group',group:{members:P.filter(p=>p.type==='interface').map(p=>p.id)}});
   port({id:'ifb1',name:'Talent IFB',label:'Talent',alias:'',subtitle:'Program, ducked by director',type:'ifb',ifb:{program:'pgm',destination:'rack-out7',dim:-15}});
 
   // functions on triggers
@@ -295,15 +295,15 @@ table.mx{border-collapse:separate;border-spacing:0}
 
   const live = { keys:new Set(['sm:1','cam1:1']), vox:new Set(['rack-in4','pgmb-in2']) };
 
-  const TYPE = {panel:'Panel',input:'Input',output:'Output',conference:'Conference',group:'Group',ifb:'IFB'};
-  const hasIn = p => p.type==='panel'||p.type==='input'||p.type==='conference'||p.type==='ifb';
+  const TYPE = {interface:'Interface',input:'Input',output:'Output',conference:'Conference',group:'Group',ifb:'IFB'};
+  const hasIn = p => p.type==='interface'||p.type==='input'||p.type==='conference'||p.type==='ifb';
   const hasOut = p => p.type!=='input';
   const FNL = {callToPort:'Call to port',callToConference:'Call to conference',callToGroup:'Call to group',callToIFB:'Call to IFB',listenToPort:'Listen to',routeAudio:'Route audio',reply:'Reply'};
   const TRIG = {always:['Always','Permanent'],vox:['Vox','While this port hears voice'],onCall:['On call','While someone calls this port']};
   const MODE = {ptt:'Hold',latch:'Tap',auto:'Tap/hold'};
   const fmtdb = v => (v>0?'+':'') + v + ' dB';
   const $ = s => document.querySelector(s);
-  const targetsFor = fn => ({callToPort:P.filter(p=>hasOut(p)&&['panel','output'].includes(p.type)),callToConference:P.filter(p=>p.type==='conference'),callToGroup:P.filter(p=>p.type==='group'),callToIFB:P.filter(p=>p.type==='ifb'),listenToPort:P.filter(p=>hasOut(p)&&p.type!=='group'),routeAudio:P.filter(hasOut)})[fn]||[];
+  const targetsFor = fn => ({callToPort:P.filter(p=>hasOut(p)&&['interface','output'].includes(p.type)),callToConference:P.filter(p=>p.type==='conference'),callToGroup:P.filter(p=>p.type==='group'),callToIFB:P.filter(p=>p.type==='ifb'),listenToPort:P.filter(p=>hasOut(p)&&p.type!=='group'),routeAudio:P.filter(hasOut)})[fn]||[];
   const fnsFor = p => { const o=[]; if (hasIn(p)) o.push('callToPort','callToConference','callToGroup','callToIFB'); else o.push('callToConference'); if (hasOut(p)) o.push('listenToPort'); o.push('routeAudio'); return o; };
 
   // ---------- derive crosspoints ----------
@@ -335,11 +335,11 @@ table.mx{border-collapse:separate;border-spacing:0}
   // ---------- ports table ----------
   let sel = 'dir', pfilter = 'all', psearch = '';
   function renderTable() {
-    const groups = [['Panels','panel'],['Inputs','input'],['Outputs','output'],['Conferences','conference'],['Groups','group'],['IFBs','ifb']];
+    const groups = [['Interfaces','interface'],['Inputs','input'],['Outputs','output'],['Conferences','conference'],['Groups','group'],['IFBs','ifb']];
     const show = p => (pfilter==='all' || (pfilter==='virtual' ? ['conference','group','ifb'].includes(p.type) : p.type===pfilter)) && (!psearch || (p.name+p.label+p.alias+p.subtitle).toLowerCase().includes(psearch));
     let h = '<thead><tr><th></th><th>Name</th><th>Label</th><th>Alias</th><th>Subtitle</th><th>Does</th></tr></thead><tbody>'; let n=0;
     groups.forEach(([t,ty]) => { const g = P.filter(p=>p.type===ty&&show(p)); if (!g.length) return; h += `<tr class="grp"><td colspan="6">${t}</td></tr>`;
-      g.forEach(p => { n++; const does = p.type==='panel' ? `${keyCount(p)} keys` + (p.triggers.some(t=>t.kind!=='key'&&t.kind!=='reply'&&t.functions.length)?' + standing':'') : ['conference','group','ifb'].includes(p.type) ? `${incoming(p).length} in, ${expand().filter(x=>x.s===p.id).length} out` : p.triggers.map(t=>t.kind==='always'?'Always':t.kind==='vox'?'Vox':'On call').join(', ') || '—';
+      g.forEach(p => { n++; const does = p.type==='interface' ? `${keyCount(p)} keys` + (p.triggers.some(t=>t.kind!=='key'&&t.kind!=='reply'&&t.functions.length)?' + standing':'') : ['conference','group','ifb'].includes(p.type) ? `${incoming(p).length} in, ${expand().filter(x=>x.s===p.id).length} out` : p.triggers.map(t=>t.kind==='always'?'Always':t.kind==='vox'?'Vox':'On call').join(', ') || '—';
         h += `<tr class="${p.id===sel?'on':''}" data-id="${p.id}"><td><span class="dot ${p.online===false?'off':''}" style="${['conference','group','ifb'].includes(p.type)?'visibility:hidden':''}"></span></td><td>${p.name}</td><td class="lbl">${p.label}</td><td>${p.alias||'<span class="dim">–</span>'}</td><td class="dim">${p.subtitle||''}</td><td class="dim">${does}</td></tr>`; }); });
     $('#pt').innerHTML = h + '</tbody>'; $('#p-count').textContent = `${n} ports`;
   }
@@ -365,23 +365,23 @@ table.mx{border-collapse:separate;border-spacing:0}
   function renderEditor() {
     const p = byId[sel]; if (!p) return;
     const virtual = ['conference','group','ifb'].includes(p.type);
-    let h = `<div class="ed-head"><span class="sw ${p.type}" style="height:22px"></span><input class="name-in" value="${p.name}" aria-label="Name"><span class="badge">${TYPE[p.type]}</span>${!virtual ? `<span class="muted" style="font-size:13px"><span class="dot ${p.online?'':'off'}"></span> ${p.online ? (p.type==='panel'?'Online, iPhone, Safari':'Online') : 'Offline'}</span>`:''}</div>
+    let h = `<div class="ed-head"><span class="sw ${p.type}" style="height:22px"></span><input class="name-in" value="${p.name}" aria-label="Name"><span class="badge">${TYPE[p.type]}</span>${!virtual ? `<span class="muted" style="font-size:13px"><span class="dot ${p.online?'':'off'}"></span> ${p.online ? (p.type==='interface'?'Online, iPhone, Safari':'Online') : 'Offline'}</span>`:''}</div>
       <section class="blk"><div class="fields">
         <div class="field"><label>Label</label><input class="in" value="${p.label}"><div class="help">What a key shows. Keep it short.</div></div>
-        <div class="field"><label>Alias</label><input class="in" value="${p.alias||''}" placeholder="Who or what"><div class="help">${p.type==='panel'?'Who has it today.':'What is plugged in.'}</div></div>
+        <div class="field"><label>Alias</label><input class="in" value="${p.alias||''}" placeholder="Who or what"><div class="help">${p.type==='interface'?'Who has it today.':'What is plugged in.'}</div></div>
         <div class="field"><label>Subtitle</label><input class="in" value="${p.subtitle||''}" placeholder="Optional"></div>
       </div></section>`;
-    if (p.type==='panel') h += `
+    if (p.type==='interface') h += `
       <section class="blk"><div class="fields">
-        <div class="field"><label>PIN</label><input class="in num" value="${p.panel.pin}" placeholder="None"></div>
-        <div class="field"><label>Starting volume</label><input class="in num" value="${p.panel.master}"></div>
-        <div class="field"><label>Reply key</label><select class="sel">${Object.entries(MODE).map(([k,v])=>`<option ${p.panel.replyMode===k?'selected':''}>${v}</option>`).join('')}</select></div>
+        <div class="field"><label>PIN</label><input class="in num" value="${p.interface.pin}" placeholder="None"></div>
+        <div class="field"><label>Starting volume</label><input class="in num" value="${p.interface.master}"></div>
+        <div class="field"><label>Reply key</label><select class="sel">${Object.entries(MODE).map(([k,v])=>`<option ${p.interface.replyMode===k?'selected':''}>${v}</option>`).join('')}</select></div>
       </div></section>
       <section class="blk"><h3>Keys <span class="dim">${keyCount(p)} of 6</span></h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;align-items:start">
           <div class="bp">${[1,2,3,4,5,6].map(n => { const tr = p.triggers.find(t=>t.kind==='key'&&t.key===n); const f = tr && tr.functions[0]; const isLive = live.keys.has(p.id+':'+n);
             return `<button class="bpkey ${tr?'':'empty'} ${selKey===n?'on':''} ${isLive?'live':''}" data-key="${n}"><span class="n">${n}</span><span class="t">${f ? (byId[f.target]?.label ?? '') : 'Empty'}</span><span class="f">${tr ? (f ? FNL[f.fn] + (tr.functions.length>1?` +${tr.functions.length-1}`:'') : 'No function') + ' · ' + MODE[tr.mode] : 'Tap to set'}</span></button>`; }).join('')}
-            <button class="bpkey reply ${selKey==='reply'?'on':''}" data-key="reply"><span><span class="t" style="padding:0">Reply</span> <span class="f" style="padding:0">Talks back to the last caller · ${MODE[p.panel.replyMode]}</span></span><span class="badge">Built in</span></button>
+            <button class="bpkey reply ${selKey==='reply'?'on':''}" data-key="reply"><span><span class="t" style="padding:0">Reply</span> <span class="f" style="padding:0">Talks back to the last caller · ${MODE[p.interface.replyMode]}</span></span><span class="badge">Built in</span></button>
           </div>
           <div class="keyed" id="keyed">${keyEditor(p)}</div>
         </div>
@@ -396,7 +396,7 @@ table.mx{border-collapse:separate;border-spacing:0}
     if (p.type==='group') h += `<section class="blk"><h3>Members</h3><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${p.group.members.map(m=>`<span class="badge" style="height:28px;font-size:13px;color:var(--fg)">${byId[m].label}</span>`).join('')}<select class="sel" style="width:160px;height:30px"><option>Add…</option></select></div><div class="help dim" style="font-size:12.5px">A call to this group reaches every member at once. Members do not hear each other through it.</div></section>`;
     if (p.type==='ifb') h += `<section class="blk"><h3>IFB</h3><div class="fields">
         <div class="field"><label>Program</label><select class="sel">${P.filter(q=>hasOut(q)&&q.type!=='group'&&q.type!=='ifb').map(q=>`<option ${q.id===p.ifb.program?'selected':''}>${q.label}</option>`).join('')}</select><div class="help">What is heard when nobody is talking into it.</div></div>
-        <div class="field"><label>Goes to</label><select class="sel">${P.filter(q=>['panel','output'].includes(q.type)).map(q=>`<option ${q.id===p.ifb.destination?'selected':''}>${q.label}${q.alias?' · '+q.alias:''}</option>`).join('')}</select></div>
+        <div class="field"><label>Goes to</label><select class="sel">${P.filter(q=>['interface','output'].includes(q.type)).map(q=>`<option ${q.id===p.ifb.destination?'selected':''}>${q.label}${q.alias?' · '+q.alias:''}</option>`).join('')}</select></div>
         <div class="field"><label>Dim program by</label><select class="sel"><option>−10 dB</option><option selected>−15 dB</option><option>−20 dB</option><option>Cut</option></select><div class="help">While anyone is calling this IFB.</div></div>
       </div></section>`;
     if (p.type==='conference') h += `<section class="blk"><div class="help dim">A conference has no settings of its own. Who talks in and who hears it comes from the other ports' functions, listed below and on the Groups &amp; conferences page.</div></section>`;
@@ -408,7 +408,7 @@ table.mx{border-collapse:separate;border-spacing:0}
   }
   function keyEditor(p) {
     if (selKey===null) return `<div class="nothing">Pick a key to set what it does.</div>`;
-    if (selKey==='reply') return `<h4>Reply</h4><div class="field"><label>Behaviour</label><select class="sel">${Object.entries(MODE).map(([k,v])=>`<option ${p.panel.replyMode===k?'selected':''}>${v}</option>`).join('')}</select></div><div class="dim" style="font-size:12.5px">Lights with whoever last called this panel directly or through a group, and talks back to them. It does not count toward six.</div>`;
+    if (selKey==='reply') return `<h4>Reply</h4><div class="field"><label>Behaviour</label><select class="sel">${Object.entries(MODE).map(([k,v])=>`<option ${p.interface.replyMode===k?'selected':''}>${v}</option>`).join('')}</select></div><div class="dim" style="font-size:12.5px">Lights with whoever last called this interface directly or through a group, and talks back to them. It does not count toward six.</div>`;
     const tr = p.triggers.find(t=>t.kind==='key'&&t.key===selKey);
     if (!tr) return `<h4>Key ${selKey}</h4><div class="nothing">Empty.</div><button class="addfn" data-add="key">+ Add function</button>`;
     return `<h4>Key ${selKey}<button class="btn quiet sm" data-clear="${selKey}">Clear key</button></h4>
@@ -455,7 +455,7 @@ table.mx{border-collapse:separate;border-spacing:0}
       <table class="tbl"><thead><tr><th>Port</th><th>${p.type==='ifb'?'Into it':'Talks in'}</th><th>Hears it</th><th>Level</th><th>Set where</th></tr></thead><tbody>
       ${[...rows.values()].map(r => { const q = byId[r.id]; const i = r.in, o = r.out; const isLive = (i&&isOpen(i)&&i.kind!=='P') ; return `<tr><td><span class="sw ${q.type}"></span>${q.label}${q.alias?` <span class="dim">${q.alias}</span>`:''}</td><td>${i ? `<span class="cell ${i.kind} ${isLive?'live':''}">${i.kind==='P'?'Program':i.kind==='T'?'Key':i.kind==='V'?'Vox':'Always'}</span>` : r.member ? '<span class="dim">member</span>' : '<span class="dim">–</span>'}</td><td>${o ? `<span class="cell L">${o.gate==='always'?'Always':'Key'}</span>` : r.member ? '<span class="cell L">Always</span>' : '<span class="dim">–</span>'}</td><td class="num dim">${fmtdb((i||o||{level:0}).level||0)}</td><td class="dim" style="font-size:12.5px">${i ? gateText(i) : o ? gateText(o) : 'group members'} · <button class="go" style="color:var(--pl)" data-open="${(i||o)?.owner ?? q.id}">open</button></td></tr>`; }).join('')}
       </tbody></table>
-      <div style="display:flex;gap:10px;align-items:center"><select class="sel" style="width:220px"><option>Add a port…</option>${P.filter(q=>!rows.has(q.id)&&q.id!==p.id&&!['conference','ifb','group'].includes(q.type)).map(q=>`<option>${q.label}${q.alias?' · '+q.alias:''}</option>`).join('')}</select><span class="dim" style="font-size:13px">${p.type==='conference'?'Adding a panel puts "Call to conference" on its next free key; an input or output gets it on Always.':p.type==='group'?'Adds a member.':'Adding a panel puts "Call to IFB" on its next free key.'}</span></div>`;
+      <div style="display:flex;gap:10px;align-items:center"><select class="sel" style="width:220px"><option>Add a port…</option>${P.filter(q=>!rows.has(q.id)&&q.id!==p.id&&!['conference','ifb','group'].includes(q.type)).map(q=>`<option>${q.label}${q.alias?' · '+q.alias:''}</option>`).join('')}</select><span class="dim" style="font-size:13px">${p.type==='conference'?'Adding a interface puts "Call to conference" on its next free key; an input or output gets it on Always.':p.type==='group'?'Adds a member.':'Adding a interface puts "Call to IFB" on its next free key.'}</span></div>`;
   }
   $('#gc-list').addEventListener('click', e => { const b = e.target.closest('.item'); if (b) { selGC = b.dataset.id; renderGC(); } });
   $('#gc-ed').addEventListener('click', e => { const b = e.target.closest('[data-open]'); if (b) { sel = b.dataset.open; selKey = null; renderPorts(); go('ports'); } });
@@ -464,15 +464,15 @@ table.mx{border-collapse:separate;border-spacing:0}
   function renderMatrix() {
     const X = expand();
     const S = P.filter(hasIn).filter(p=>p.type!=='group'); const D = P.filter(hasOut);
-    const sg = [['Panels',p=>p.type==='panel'],['Inputs',p=>p.type==='input'],['Conferences',p=>p.type==='conference'],['IFBs',p=>p.type==='ifb']].map(([t,f])=>[t,S.filter(f)]).filter(g=>g[1].length);
-    const dg = [['Panels',p=>p.type==='panel'],['Outputs',p=>p.type==='output'],['Conferences',p=>p.type==='conference'],['Groups',p=>p.type==='group'],['IFBs',p=>p.type==='ifb']].map(([t,f])=>[t,D.filter(f)]).filter(g=>g[1].length);
+    const sg = [['Interfaces',p=>p.type==='interface'],['Inputs',p=>p.type==='input'],['Conferences',p=>p.type==='conference'],['IFBs',p=>p.type==='ifb']].map(([t,f])=>[t,S.filter(f)]).filter(g=>g[1].length);
+    const dg = [['Interfaces',p=>p.type==='interface'],['Outputs',p=>p.type==='output'],['Conferences',p=>p.type==='conference'],['Groups',p=>p.type==='group'],['IFBs',p=>p.type==='ifb']].map(([t,f])=>[t,D.filter(f)]).filter(g=>g[1].length);
     const CW = 30, HW = 180;
     let h = `<thead><tr><th class="corner" rowspan="2" style="width:${HW}px"></th>${dg.map(([t,g])=>`<th class="grp" colspan="${g.length}" style="width:${g.length*CW}px">${t}</th>`).join('')}</tr><tr>`;
     dg.forEach(([,g]) => g.forEach(d => h += `<th class="col"><span class="lbl">${d.label}</span></th>`)); h += '</tr></thead><tbody>';
     $('#mx').style.cssText = `table-layout:fixed;width:${HW + CW*D.length}px`;
     sg.forEach(([t,g]) => { h += `<tr class="grp"><th>${t}</th><td colspan="${D.length}"></td></tr>`; g.forEach(s => { h += `<tr><th>${s.label}${s.alias?` <span class="dim">${s.alias}</span>`:''}</th>`;
       dg.forEach(([,cg]) => cg.forEach(d => { const xs = X.filter(x=>x.s===s.id&&x.d===d.id); const gx = d.type==='group' ? X.filter(x=>x.s===s.id&&x.fn?.fn==='callToGroup'&&x.fn.target===d.id) : [];
-        const x = xs[0]; const back = X.find(y=>y.s===d.id&&y.d===s.id&&y.kind==='L'); let k = x ? (x.kind==='T' && back && s.type==='panel' && d.type==='conference' ? 'TL' : x.kind) : (gx.length ? 'T' : '');
+        const x = xs[0]; const back = X.find(y=>y.s===d.id&&y.d===s.id&&y.kind==='L'); let k = x ? (x.kind==='T' && back && s.type==='interface' && d.type==='conference' ? 'TL' : x.kind) : (gx.length ? 'T' : '');
         const isLive = x && isOpen(x) && x.kind!=='L' && x.kind!=='P'; h += `<td><span class="cell ${k} ${isLive?'live':''}" ${x?`data-owner="${x.owner}"`:gx.length?`data-owner="${s.id}"`:''} title="${s.label} → ${d.label}${x?` · ${fmtdb(x.level)} · set on ${byId[x.owner].label}`:''}">${k||'·'}</span></td>`; })); h += '</tr>'; }); });
     $('#mx').innerHTML = h + '</tbody>';
   }
@@ -490,14 +490,14 @@ table.mx{border-collapse:separate;border-spacing:0}
   // ---------- live ----------
   function renderLive() {
     const X = expand(); const open = X.filter(x => isOpen(x) && x.kind!=='L' && x.kind!=='P' && x.gate!=='always');
-    const rows = P.filter(p=>['panel','input','output'].includes(p.type));
+    const rows = P.filter(p=>['interface','input','output'].includes(p.type));
     $('#live-t').innerHTML = `<thead><tr><th></th><th>Port</th><th>Open now</th><th>Calling it</th></tr></thead><tbody>${rows.map(p => { const mine = open.filter(x=>x.owner===p.id); const callers = open.filter(x=>x.d===p.id && x.owner!==p.id);
       return `<tr class="lrow ${p.online?'':'dim'}"><td><span class="dot ${p.online?(mine.length?'hot':''):'off'}"></span></td><td>${p.label}${p.alias?` <span class="dim">${p.alias}</span>`:''}</td><td><div class="chips">${mine.map(x=>`<span class="cell ${x.kind} live">${x.gate.trigger.kind==='key'?'Key '+x.gate.trigger.key:'Vox'} → ${byId[x.fn?.target ?? x.d].label}</span>`).join('')||'<span class="dim">–</span>'}</div></td><td><div class="chips">${callers.map(x=>`<span class="cell">${byId[x.s].label}${x.gate.trigger.kind==='vox'?' (vox)':''}</span>`).join('')||'<span class="dim">–</span>'}</div></td></tr>`; }).join('')}</tbody>`;
     const a = [];
-    P.filter(p=>p.type==='panel'&&!keyCount(p)).forEach(p=>a.push([`${p.label} has no keys`,'']));
+    P.filter(p=>p.type==='interface'&&!keyCount(p)).forEach(p=>a.push([`${p.label} has no keys`,'']));
     P.filter(p=>p.type==='conference'&&!X.some(x=>x.d===p.id)).forEach(p=>a.push([`${p.label} has no talker`,'Nothing is routed into it.']));
     P.filter(p=>p.type==='ifb').forEach(p=>{ if(!p.ifb.program)a.push([`${p.label} has no program`,'']); if(!X.some(x=>x.s===p.id))a.push([`${p.label} goes nowhere`,'']); });
-    P.filter(p=>p.type==='panel'&&!p.online&&keyCount(p)).forEach(p=>a.push([`${p.label} is offline`,`${p.alias||'Nobody'} has not picked it up.`]));
+    P.filter(p=>p.type==='interface'&&!p.online&&keyCount(p)).forEach(p=>a.push([`${p.label} is offline`,`${p.alias||'Nobody'} has not picked it up.`]));
     $('#attn-n').textContent = a.length; $('#attn-n').hidden = !a.length;
     $('#attn').innerHTML = a.length ? a.map(([t,s])=>`<div class="it"><span class="dot warn"></span><div>${t}<small>${s}</small></div></div>`).join('') : '<div class="empty">Nothing right now.</div>';
     $('#open').innerHTML = open.map(x=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px"><span>${byId[x.owner].label} <span class="dim">→ ${byId[x.fn?.target ?? x.d].label}</span></span><span class="dim num">${x.gate.trigger.kind==='vox'?'vox':'key '+x.gate.trigger.key}</span></div>`).join('') || '<div class="empty">Nothing open.</div>';
@@ -507,7 +507,7 @@ table.mx{border-collapse:separate;border-spacing:0}
   // ---------- nav ----------
   function go(tab) { document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(t=>t.hidden = t.id!=='tab-'+tab); }
   $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) go(b.dataset.tab); });
-  function renderAll() { renderPorts(); renderGC(); renderMatrix(); renderLive(); $('#n-ports').textContent = P.length; $('#n-gc').textContent = P.filter(p=>['conference','group','ifb'].includes(p.type)).length; $('#n-hw').textContent = NODES.length; $('#gw-online').textContent = `${P.filter(p=>p.type==='panel'&&p.online).length} / ${P.filter(p=>p.type==='panel').length}`; }
+  function renderAll() { renderPorts(); renderGC(); renderMatrix(); renderLive(); $('#n-ports').textContent = P.length; $('#n-gc').textContent = P.filter(p=>['conference','group','ifb'].includes(p.type)).length; $('#n-hw').textContent = NODES.length; $('#gw-online').textContent = `${P.filter(p=>p.type==='interface'&&p.online).length} / ${P.filter(p=>p.type==='interface').length}`; }
   renderAll(); renderHW();
 })();
 </script>
