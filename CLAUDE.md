@@ -3,6 +3,12 @@
 Web-based party-line / PGM intercom in the style of Riedel Artist and Bolero. Single site, local
 WiFi, no accounts. Phones and browsers are stations; hardware nodes bridge audio interfaces in.
 
+**The core: comms anyone can run, on devices they already own.** Not another AES67 comms
+platform. Nothing to install, one box or a laptop on ordinary WiFi, set up in minutes; pro depth
+under the surface. AES67, Dante and 2-wire/4-wire are bridges in through a comms-node, never a
+requirement. When a choice trades adoptability for pro-matrix features, adoptability wins unless
+the user says otherwise. Full statement: spec, "Product direction".
+
 ## Where things are
 
 - `docs/superpowers/specs/2026-09-29-new-comms-matrix-design.md` is the **current spec (v2, rev 3)**:

@@ -33,11 +33,24 @@ per port, conferences with N-1, IFB program dim, groups expanded at config time,
 volumes per source. Sessions carry **one Opus track per port**, so a node session has
 N sendonly and M recvonly tracks and a station has one each.
 
+Latency work rides along, since it is all in the router (research:
+`docs/research/2026-09-29-competitors-latency-hardware.md` §4.4):
+- **Adaptive jitter queue per peer**: target the measured p95 arrival jitter with a
+  one-frame floor, drain gradually when above it, Opus PLC on underrun instead of
+  re-priming. Today a burst can sit at 80 ms and never drain. Queue depth in stats.
+- **Keep phones awake**: stations always send, silence included (no DTX, no recvonly),
+  so WiFi power save never holds their downlink for a beacon.
+- **DSCP EF (46)** on the router's UDP socket, so WMM access points use the voice queue.
+- **5 ms mixer tick**, browser uplink stays 10 ms; 5 ms downlink frames only if the
+  smoke test and a real phone show it pays.
+- **Log the Opus TOC byte** per peer, to see what browsers actually encode.
+
 Done when: the smoke test (real router, real str0m clients) proves: party line N-1,
 input on Always into a conference, input on Vox calling a station directly (the Dante
 In 10 case), a group call reaching two members, an IFB dimming program during an
 interrupt, a listen key, a station hearing a source only when a key on *another* port
-is down, and a multi-track node session. Latency floor re-measured.
+is down, and a multi-track node session. Latency floor re-measured, and a burst of late
+packets drains back to target within a second.
 
 Decisions this phase settles: vox measurement window; whether onCall needs a second
 pass; whether unrouted node tracks are worth muting.
@@ -85,8 +98,12 @@ routed independently ("in 3 → SHOW", "SHOW → out 7") and Vox on an input cal
 
 ### 6. Harden
 
-Reconnect drills across all three peers, iOS Safari on a real phone, latency
-measured on WiFi and written down, README rewritten for the port model.
+Reconnect drills across all three peers, iOS Safari on a real phone, README rewritten
+for the port model. Latency measured on WiFi as p50 and p95 per client type (screen on,
+screen locked, listen-only) from `getStats` and router stats, and written down with a
+restated target (proposal: p50 ≤ 100 ms, p95 ≤ 150 ms on the recommended WiFi). A short
+WiFi recipe in the README: dedicated 5 GHz SSID, channel 44 or 149, WMM on, DTIM 1, TWT
+off. Headset mode (echo cancellation off) measured and kept only if it saves time.
 
 ## Order
 

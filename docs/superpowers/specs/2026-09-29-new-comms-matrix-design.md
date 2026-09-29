@@ -4,6 +4,29 @@ Status: **draft for review, 2026-09-29 (rev 3).** Supersedes the data model, key
 Manager sections of `2026-09-29-new-comms-design.md`. Architecture (gateway, mix-router,
 Talk, comms-node, protocol, transport, latency targets, trust model) is unchanged.
 
+## Product direction
+
+Decided 2026-09-29. This is the core of the project and outranks feature parity.
+
+**Comms anyone can run, on devices they already own.** Not another AES67 comms platform.
+- **Stations are phones and laptops.** Open a link, pick a station, talk. Nothing to install;
+  the phone app is a PWA. A native app only if latency or background audio demands it.
+- **A show runs from one small box or a laptop** on ordinary WiFi. No PTP, no managed
+  switches, no multicast, no network engineer. We publish a simple WiFi recipe and make the
+  system tell you when the network is the problem.
+- **Set up in minutes by someone who is not a comms specialist.** Sensible defaults, a
+  show that works out of the seed, plain words in the UI.
+- **Pro depth under the surface.** The Artist-style port model is there for the people who
+  need it; the common case (party lines, program, IFB, a direct line) never makes you
+  think about it.
+- **Pro interop is a bridge, not the core.** AES67, Dante, 2-wire and 4-wire come in
+  through a comms-node as ordinary input and output ports. They never become a
+  requirement, and the core never depends on them.
+- **Hardware extends reach, it is not the price of entry.** Order: accessories and cheap
+  bridges (PTT buttons, Stream Deck keys, a node box) before panels and beltpacks.
+- **Latency is how we earn trust.** Beat every browser and app intercom on the recommended
+  WiFi, and measure it honestly as p50 and p95.
+
 Direction from review: model it the way Riedel Artist does. Everything that carries audio
 is a **port**. A port is configured by attaching **functions** (call to a conference,
 listen to a port, route audio…) to its **triggers** (a key, Always, Vox, On Call). The
