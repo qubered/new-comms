@@ -4,8 +4,39 @@
     {
       "name": "mockups",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "docs/design/mockups"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765",
+        "--directory",
+        "docs/design/mockups"
+      ],
       "port": 8765
+    },
+    {
+      "name": "gateway",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "start",
+        "-w",
+        "@comms/gateway"
+      ],
+      "port": 8080
+    },
+    {
+      "name": "talk",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "@comms/talk"
+      ],
+      "port": 5173,
+      "env": {
+        "COMMS_HTTP": "1"
+      }
     }
   ]
 }

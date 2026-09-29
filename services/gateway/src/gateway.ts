@@ -45,6 +45,7 @@ export class Gateway extends EventEmitter {
   constructor(
     readonly store: Store,
     readonly router: MixRouter,
+    readonly name = "Comms",
   ) {
     super();
     router.on("event", (event: RouterEvent) => this.onRouter(event));
@@ -67,6 +68,7 @@ export class Gateway extends EventEmitter {
   snapshot(): Snapshot {
     return {
       rev: this.rev,
+      name: this.name,
       channels: this.channels,
       packs: this.packs.map(this.publicPack),
       live: Object.fromEntries(
@@ -192,6 +194,17 @@ export class Gateway extends EventEmitter {
     });
   }
 
+  private checkPin(pin: unknown): string | undefined {
+    if (pin === undefined || pin === null || pin === "") return undefined;
+    if (typeof pin !== "string" || !/^\d{4}$/.test(pin)) throw new HttpError(400, "PIN must be four digits");
+    return pin;
+  }
+
+  verifyPin(id: string, pin: unknown): void {
+    const pack = this.findPack(id);
+    if (pack.pin && pack.pin !== pin) throw new HttpError(403, "wrong PIN");
+  }
+
   createPack(body: Record<string, unknown>): Pack {
     const name = String(body.name ?? "").trim();
     if (!name) throw new HttpError(400, "name is required");
@@ -202,7 +215,8 @@ export class Gateway extends EventEmitter {
       masterVolume: clamp(Number(body.masterVolume ?? 80)),
       keys: body.keys ? this.keysFrom(body.keys) : [],
     };
-    if (typeof body.pin === "string" && body.pin) pack.pin = body.pin;
+    const pin = this.checkPin(body.pin);
+    if (pin) pack.pin = pin;
     this.packs.push(pack);
     this.pushConfig();
     return pack;
@@ -216,7 +230,8 @@ export class Gateway extends EventEmitter {
     }
     if (body.masterVolume !== undefined) pack.masterVolume = clamp(Number(body.masterVolume));
     if ("pin" in body) {
-      if (typeof body.pin === "string" && body.pin) pack.pin = body.pin;
+      const pin = this.checkPin(body.pin);
+      if (pin) pack.pin = pin;
       else delete pack.pin;
     }
     if (body.keys !== undefined) pack.keys = this.keysFrom(body.keys);

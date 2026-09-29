@@ -15,7 +15,7 @@ const binary =
   resolve(root, "target/release/mix-router");
 
 const router = new MixRouter(binary);
-const gateway = new Gateway(new Store(dataFile), router);
+const gateway = new Gateway(new Store(dataFile), router, process.env.COMMS_NAME ?? "Comms");
 const app = buildServer(gateway, { mediaIp: process.env.COMMS_MEDIA_IP, logger: { level: "warn" } });
 
 router.start();

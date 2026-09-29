@@ -62,6 +62,8 @@ export interface PackLiveState {
 
 export interface Snapshot {
   rev: number;
+  /** Shown in the top bar of both apps, e.g. "Stage A". */
+  name: string;
   channels: Channel[];
   packs: PublicPack[];
   live: Record<string, PackLiveState>;
@@ -134,7 +136,7 @@ export function applyEvent(state: Snapshot | null, event: ServerEvent): Snapshot
     for (const id of Object.keys(live)) {
       if (!event.packs.some((pack) => pack.id === id)) delete live[id];
     }
-    return { rev: event.rev, channels: event.channels, packs: event.packs, live };
+    return { ...state, rev: event.rev, channels: event.channels, packs: event.packs, live };
   }
   return { ...state, rev: event.rev, live: { ...state.live, [event.packId]: event.live } };
 }

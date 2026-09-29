@@ -44,7 +44,7 @@ export function describeClient(userAgent = ""): string {
   return `${device}, ${browser}`;
 }
 
-export function buildServer(gateway: Gateway, options: { mediaIp?: string; logger?: boolean } = {}): FastifyInstance {
+export function buildServer(gateway: Gateway, options: { mediaIp?: string; logger?: boolean | { level: string } } = {}): FastifyInstance {
   const app = Fastify({ logger: options.logger ?? false, bodyLimit: 1_000_000 });
 
   app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply) => {
@@ -104,6 +104,11 @@ export function buildServer(gateway: Gateway, options: { mediaIp?: string; logge
     return reply.code(204).send();
   });
 
+  app.post("/api/v1/packs/:id/pin", async (request, reply) => {
+    gateway.verifyPin(idOf(request), body(request).pin);
+    return reply.code(204).send();
+  });
+
   // ---- media (WHEP-style) ----
   app.post("/api/v1/media/sessions", async (request, reply) => {
     const { packId, offer, pin } = body(request) as unknown as MediaSessionRequest;
@@ -115,7 +120,9 @@ export function buildServer(gateway: Gateway, options: { mediaIp?: string; logge
       candidateIp(request, options.mediaIp),
       describeClient(request.headers["user-agent"]),
     );
-    return reply.code(201).send(result);
+    // Ask browsers for 10 ms Opus packets (they default to 20 ms).
+    const answer = result.answer.replace(/(a=rtpmap:\d+ opus\/48000\/2\r\n)/, "$1a=ptime:10\r\n");
+    return reply.code(201).send({ ...result, answer });
   });
   app.delete("/api/v1/media/sessions/:id", async (request, reply) => {
     gateway.closeSession(idOf(request));
