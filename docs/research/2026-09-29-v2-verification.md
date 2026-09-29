@@ -1,5 +1,38 @@
 # v2 implementation and verification — 29 September 2026
 
+## Follow-up repository audit
+
+After the initial implementation, the complete v2 contract was traced through schema,
+expansion, migration, gateway/REST/SSE, router, Talk, Manager and comms-node. Two fresh
+reviewers independently inspected the code without relying on the initial completion
+claims. Their concrete findings were reproduced and fixed:
+
+| Finding | Correction and evidence |
+| --- | --- |
+| Migration silently selected channel 1 and enabled disabled hardware directions | Preserve full inventory, selected channel numbers, trims and disabled directions; seven migration regressions |
+| A transient registration failure stopped a healthy node audio session | Keep media running while discovery retries; failure/recovery regression |
+| Mic kill blocked monitor and third-party keys | Preserve those keys while rejecting microphone-opening/mixed keys; two router regressions including safe unmute |
+| Talk treated an own-mic raw route as a listen key | Classify the route by its source; Talk regression |
+| Conference keys showed the bus instead of active contributors | Derive held/Vox contributors and physical input levels; Talk regression |
+| Matrix navigation opened the owner but not the owning function | Carry trigger/function indices through navigation; browser verified the second function of Key 6 receives focus |
+| Leaving key controls could leave a key open | Explicit release on Levels and screen unmount, including unacknowledged presses; regression plus live latched-key check |
+| Latency navigation left the previous station session running | Stop the old Intercom and return to picker; browser/API confirmed disconnected with cleared keys |
+| A gated IFB monitor removed the permanent destination feed | Only permanent explicit routes replace the default feed; expansion regression |
+
+The final independent pass found no definite regressions in these fixes. Final
+`npm run typecheck`, `npm test` (**68 tests**), `npm run build`, and `npm run smoke`
+all passed. The 68 tests comprise Talk 9, protocol 18, gateway 17, router 17, node 6
+and audio host 1. The repeat smoke measured loopback p50 18 ms / p95 21 ms over 20
+impulses; an 80 ms burst returned to the measured target within 900 ms.
+
+Two existing routing semantics are explicit rather than changed by this audit:
+parallel routes sum (including a monitor to an IFB's already configured destination),
+and Always interrupt gates stay open without signal. Use Vox for signal-dependent
+interrupts. Migrated nodes need their old ID supplied with `--node-id`. These are
+documented in the README. The physical acceptance limits below remain unchanged.
+
+## Initial implementation record
+
 The software in phases 0–6 of the matrix rebuild plan is implemented on top of main
 `573bfe7`. Physical acceptance remains outstanding. The user confirmed that phones
 and a second Mac/Pi with a multichannel interface were unavailable and requested

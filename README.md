@@ -63,6 +63,8 @@ In-use changes replace the node’s session automatically. Function and trim cha
 
 The show lives in `data/state.json`: ports, node selections and operator volumes. Stop the gateway before editing the file manually. Loading a v1 show migrates it automatically and preserves the original as `state.json.v1.json`.
 
+When upgrading an existing hardware bridge, start it with `--node-id` set to its migrated node ID (the old hardware pack ID in the state file). The new default derived identity cannot infer that old ID. Migration preserves selected physical channel numbers and disabled directions; an ambiguous selection stops migration with an error instead of routing another channel.
+
 Useful environment variables:
 
 | Variable | Purpose |
@@ -108,3 +110,5 @@ npm run smoke         # real router + WebRTC clients, v1 reference and v2 routin
 Regenerate types with `npm run generate -w @comms/protocol` after changing the schema. `npx tsx scripts/seed-v2.ts --output /path/to/state.json` writes a v2 seed to a new file without contacting a gateway.
 
 The repository layout remains `apps/talk`, `apps/manager`, `services/gateway`, `crates/mix-router`, `crates/comms-node` and `packages/protocol`. Multiple configured routes from the same source are summed; avoid unintended duplicate feeds. A real interface on another machine, WiFi latency and long-running locked-phone behavior require physical acceptance testing before a live show.
+
+An IFB already feeds its configured destination. Adding a gated listen to that same destination adds another route while held; use a different monitoring station to avoid doubling the feed. Always triggers remain open even during silence or source disconnection, including IFB interrupt gates; use Vox when an interrupt should follow signal activity.
