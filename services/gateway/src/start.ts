@@ -14,12 +14,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const httpPort = Number(process.env.PORT ?? 8080);
 const httpsPort = Number(process.env.HTTPS_PORT ?? 8443);
 const dataFile = process.env.COMMS_DATA ?? resolve(root, "data/state.json");
-const binary =
-  process.env.MIX_ROUTER_BIN ??
-  ["target/release/mix-router", "target/debug/mix-router"].map((p) => resolve(root, p)).find(existsSync) ??
-  resolve(root, "target/release/mix-router");
+const routerAddress = process.env.MIX_ROUTER_ADDR ?? "127.0.0.1:7100";
 
-const router = new MixRouter(binary);
+const router = new MixRouter(routerAddress);
 const gateway = new Gateway(new Store(dataFile), router, process.env.COMMS_NAME ?? "Comms");
 const options = { mediaIp: process.env.COMMS_MEDIA_IP, logger: { level: "warn" } };
 

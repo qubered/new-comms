@@ -1,7 +1,9 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { networkInterfaces } from "node:os";
-import type { MediaSessionRequest, NodeRegistration, ServerEvent } from "@comms/protocol";
-import { Gateway, HttpError } from "./gateway.ts";
+import type { MediaSessionRequest, ServerEvent } from "@comms/protocol";
+import { HttpError } from "./errors.ts";
+import { Gateway } from "./gateway.ts";
+import { validate } from "./validate.ts";
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 
@@ -116,8 +118,7 @@ export function buildServer(
 
   // ---- media (WHEP-style) ----
   app.post("/api/v1/media/sessions", async (request, reply) => {
-    const { packId, offer, pin } = body(request) as unknown as MediaSessionRequest;
-    if (!packId || typeof offer !== "string") throw new HttpError(400, "packId and offer are required");
+    const { packId, offer, pin } = validate<MediaSessionRequest>("MediaSessionRequest", request.body);
     const result = await gateway.openSession(
       packId,
       offer,
@@ -136,7 +137,7 @@ export function buildServer(
 
   // ---- hardware nodes ----
   app.post("/api/v1/nodes/register", async (request) => {
-    const pack = gateway.registerNode(body(request) as unknown as NodeRegistration);
+    const pack = gateway.registerNode(request.body);
     return { packId: pack.id };
   });
 

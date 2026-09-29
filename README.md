@@ -6,10 +6,10 @@ Spec: `docs/superpowers/specs/2026-09-29-new-comms-design.md`. Plan: `docs/super
 ```
 apps/talk/           phone client (React PWA)
 apps/manager/        admin app (React)
-services/gateway/    Node/Fastify: state, REST, SSE, WHEP signalling, spawns mix-router
+services/gateway/    Node/Fastify: state, REST, SSE, WHEP signalling; drives mix-router over a local TCP control link
 crates/mix-router/   Rust: str0m WebRTC termination, per-pack N-1 mixing, data-channel control
 crates/comms-node/   Rust: bridges one channel of an audio interface into the system
-packages/protocol/   shared types, SSE delta logic, useServerState hook
+packages/protocol/   protocol.schema.json (the authority), generated TS types, SSE delta logic, useServerState hook
 ```
 
 ## Try it
@@ -22,7 +22,7 @@ npm run dev          # builds mix-router, then gateway + Talk + Manager with hot
 npm run seed         # once, in a second terminal: a small demo show
 ```
 
-`npm run dev` prints the addresses. Open **Talk** on phones and **Manager** on a laptop.
+`npm run dev` starts `mix-router`, the gateway and both apps as separate processes and prints the addresses. Open **Talk** on phones and **Manager** on a laptop.
 The apps run over HTTPS with a self-signed certificate because browsers only allow the
 microphone on secure pages. Accept the warning once per device.
 
@@ -52,7 +52,7 @@ cargo run --release -p comms-node -- --list                       # see devices
 npm run node -- --gateway http://<computer-ip>:8080 --name "Stage rack" --device "Scarlett 18i20"
 ```
 
-It appears in Manager → Hardware. Pick its input and output there and put its pack on a
+It appears in Manager → Hardware. Pick its input and output there (pushed to the node over its data channel, applied without reconnecting) and put its pack on a
 channel: on a partyline or direct line it is always keyed; on a PGM channel it is the feed.
 Devices must support 48 kHz.
 
@@ -75,28 +75,37 @@ npm run smoke            # real mix-router, three WebRTC clients over loopback U
   recorder, clap next to A, and read the offset between the clap and its echo from B in the
   waveform. Repeat about 20 times, note p50 and worst case.
 
-## Decisions that differ from the spec
+## Process layout
 
-- The **gateway spawns mix-router** as a sidecar (the plan's stated starting point; spec §3
-  said no component spawns another). Control is line-delimited JSON on stdio.
-- **Protocol types are hand-written TypeScript** in `packages/protocol`, not generated from
-  JSON Schema. Revision-gated snapshot + deltas over SSE are implemented as specified.
-- **comms-node gets its input/output by polling** `GET /api/v1/state` every 2 s, not over a
-  data channel. It restarts its audio when the Manager changes them.
-- `crates/audio-host-api` is copied from a2-monitor but not used yet; comms-node uses cpal
-  directly.
-- Pack PINs are exactly four digits, stored in plain text in `state.json`, and checked by
-  the gateway when a session opens (and by a verify endpoint for the PIN pad). They never
-  appear in `/state`.
+Nothing spawns anything else. `mix-router` listens on `127.0.0.1:7100` (`--control ADDR` or
+`MIX_ROUTER_CONTROL`); the gateway connects to it (`MIX_ROUTER_ADDR`) and keeps retrying, so
+start order does not matter. If the gateway restarts, audio keeps flowing and the router's
+`sync` restores who is connected. If the router restarts, phones and nodes reconnect on
+their own. To run the router on another box, point `MIX_ROUTER_ADDR` at it and bind it to a
+reachable address.
+
+## Protocol
+
+`packages/protocol/schema/protocol.schema.json` is the authority. `npm run generate -w
+@comms/protocol` writes `src/generated.ts` (checked by `npm run typecheck`). The gateway
+validates every REST body and session request against the same schema. Snapshot plus
+revision-gated deltas run over SSE; a gap forces a fresh snapshot.
+
+## Where this differs from the spec
+
+- **comms-node does not use `crates/audio-host-api`.** That trait boundary models capture
+  only; the node also needs playback, so it uses cpal directly.
+- Pack PINs are exactly four digits (the spec leaves the format open), stored in plain text
+  in `state.json`, and checked by the gateway when a session opens and by a verify endpoint
+  for the PIN pad. They never appear in `/state`.
 - Master and per-key volume are applied in mix-router (one downstream track per pack).
 - A pack has one live session. A second phone picking the same pack takes it over.
 
 ## Known limits
 
-- Phones ping the router once a second; either side gives up after 3.5 to 4 s of silence
-  (measured: killing the mixer is noticed on the phone in about 3.5 s, then it reconnects in
-  under a second). Hardware nodes have no data channel, so they still rely on ICE timeouts
-  (several seconds).
+- Phones and nodes ping the router once a second; either side gives up after 3.5 to 4 s of
+  silence (measured: killing the mixer is noticed on a phone in about 3.5 s, then it
+  reconnects in under a second).
 - No packet-loss concealment; an underrun is silence. The mixer buffers about 20 ms per peer.
 - Someone heard on two channels you share is heard twice (the two contributions add).
 - iOS Safari: audio starts inside the tap that picks the pack, and the screen is kept awake

@@ -265,6 +265,7 @@ mod tests {
             kind,
             master_volume: 100.0,
             keys: keys.iter().map(|c| key(c)).collect(),
+            device: None,
         }
     }
 

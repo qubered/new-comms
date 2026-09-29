@@ -5,7 +5,6 @@ use opus::{Application, Channels, Decoder, Encoder};
 use serde::Deserialize;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use str0m::change::SdpAnswer;
 use str0m::format::Codec;
@@ -13,7 +12,7 @@ use str0m::media::{Direction, Frequency, MediaKind, MediaTime};
 use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
 
-use crate::audio::{Queue, push_playback};
+use crate::audio::{Devices, Queue, channel_of, new_queue, push_playback, start_capture, start_playback};
 
 const FRAME: usize = 480;
 
@@ -28,11 +27,46 @@ pub struct Params<'a> {
     pub gateway: &'a str,
     pub pack_id: &'a str,
     pub local_ip: IpAddr,
-    /// Where microphone frames come from; `None` sends nothing (input set to None).
-    pub capture: Option<Queue>,
-    /// Where incoming audio goes; `None` discards it.
-    pub playback: Option<Queue>,
-    pub stop: Arc<AtomicBool>,
+    pub devices: &'a Devices,
+}
+
+/// The interface input/output the Manager chose, as pushed by the router.
+#[derive(Deserialize, Clone, PartialEq, Debug, Default)]
+struct Selection {
+    input: Option<String>,
+    output: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum Reply {
+    Device(Selection),
+    Pong,
+    #[serde(other)]
+    Other,
+}
+
+/// Open device streams for one selection. Dropping this stops audio.
+struct Audio {
+    _streams: Vec<cpal::Stream>,
+    capture: Option<Queue>,
+    playback: Option<Queue>,
+}
+
+fn open_audio(devices: &Devices, selection: &Selection) -> Result<Audio, String> {
+    let mut streams = Vec::new();
+    let (mut capture, mut playback) = (None, None);
+    if let (Some(device), Some(channel)) = (&devices.input, selection.input.as_deref().and_then(|l| channel_of(l, "In"))) {
+        let queue = new_queue();
+        streams.push(start_capture(device, channel, queue.clone())?);
+        capture = Some(queue);
+    }
+    if let (Some(device), Some(channel)) = (&devices.output, selection.output.as_deref().and_then(|l| channel_of(l, "Out"))) {
+        let queue = new_queue();
+        streams.push(start_playback(device, channel, queue.clone())?);
+        playback = Some(queue);
+    }
+    Ok(Audio { _streams: streams, capture, playback })
 }
 
 pub fn run(params: Params<'_>) -> Result<(), String> {
@@ -45,6 +79,7 @@ pub fn run(params: Params<'_>) -> Result<(), String> {
     rtc.add_local_candidate(Candidate::host(local, "udp").map_err(|e| e.to_string())?);
     let mut change = rtc.sdp_api();
     let mid = change.add_media(MediaKind::Audio, Direction::SendRecv, None, None, None);
+    change.add_channel("control".into());
     let (offer, pending) = change.apply().ok_or("could not build offer")?;
 
     let response: SessionResponse = ureq::post(&format!("{}/api/v1/media/sessions", params.gateway))
@@ -71,12 +106,25 @@ fn pump(rtc: &mut Rtc, socket: &UdpSocket, local: SocketAddr, mid: str0m::media:
     let mut connected = false;
     let mut sent: u64 = 0;
     let mut pt = None;
+    let mut channel = None;
+    let mut audio: Option<Audio> = None;
+    let mut selection = Selection::default();
+    let mut last_ping = Instant::now();
+    let mut last_rx = Instant::now();
 
     loop {
-        if p.stop.load(Ordering::Relaxed) {
-            return Ok(());
-        }
         let now = Instant::now();
+        if channel.is_some() {
+            if now.duration_since(last_rx) > Duration::from_millis(3500) {
+                return Err("the mixer stopped answering".into());
+            }
+            if now.duration_since(last_ping) >= Duration::from_secs(1) {
+                last_ping = now;
+                if let Some(mut c) = rtc.channel(channel.unwrap()) {
+                    let _ = c.write(false, br#"{"type":"ping"}"#);
+                }
+            }
+        }
         while let Ok((count, source)) = socket.recv_from(&mut buffer) {
             if let Ok(receive) = Receive::new(Protocol::Udp, source, local, &buffer[..count]) {
                 rtc.handle_input(Input::Receive(now, receive)).map_err(|e| e.to_string())?;
@@ -94,11 +142,27 @@ fn pump(rtc: &mut Rtc, socket: &UdpSocket, local: SocketAddr, mid: str0m::media:
                     let _ = socket.send_to(&t.contents, t.destination);
                 }
                 Output::Event(Event::Connected) => connected = true,
+                Output::Event(Event::ChannelOpen(id, _)) => {
+                    channel = Some(id);
+                    last_rx = Instant::now();
+                }
+                Output::Event(Event::ChannelData(data)) if !data.binary => {
+                    last_rx = Instant::now();
+                    if let Ok(Reply::Device(next)) = serde_json::from_slice::<Reply>(&data.data) {
+                        if next != selection || audio.is_none() {
+                            eprintln!("device selection: input {:?}, output {:?}", next.input, next.output);
+                            drop(audio.take()); // stop the old streams before opening the new ones
+                            audio = Some(open_audio(p.devices, &next)?);
+                            selection = next;
+                        }
+                    }
+                }
                 Output::Event(Event::IceConnectionStateChange(IceConnectionState::Disconnected)) => {
                     return Err("ice disconnected".into());
                 }
                 Output::Event(Event::MediaData(data)) => {
-                    if let (Some(queue), Ok(count)) = (&p.playback, decoder.decode_float(&data.data, &mut pcm, false)) {
+                    let playback = audio.as_ref().and_then(|a| a.playback.as_ref());
+                    if let (Some(queue), Ok(count)) = (playback, decoder.decode_float(&data.data, &mut pcm, false)) {
                         push_playback(queue, &pcm[..count]);
                     }
                 }
@@ -113,7 +177,7 @@ fn pump(rtc: &mut Rtc, socket: &UdpSocket, local: SocketAddr, mid: str0m::media:
             if pt.is_none() {
                 pt = rtc.writer(mid).and_then(|w| w.payload_params().find(|x| x.spec().codec == Codec::Opus).map(|x| x.pt()));
             }
-            let (Some(pt), Some(capture)) = (pt, &p.capture) else { continue };
+            let (Some(pt), Some(capture)) = (pt, audio.as_ref().and_then(|a| a.capture.as_ref())) else { continue };
             loop {
                 {
                     let Ok(mut queue) = capture.lock() else { break };

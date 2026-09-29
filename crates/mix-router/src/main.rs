@@ -7,14 +7,14 @@ mod mixer;
 mod peer;
 
 use std::collections::HashMap;
-use std::io::{self, BufRead, ErrorKind};
-use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::io::{self, BufRead, BufReader, ErrorKind};
+use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::Arc;
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use control::{Command, Event, emit};
+use control::{Command, Event, SyncSession, emit, set_sink};
 use mixer::Mixer;
 use peer::{FRAME, Peer, PeerEvent};
 use socket2::{Domain, Protocol, Socket, Type};
@@ -30,7 +30,9 @@ enum Input {
         source: SocketAddr,
         contents: Vec<u8>,
     },
-    ControlClosed,
+    /// A gateway connected; it becomes the only control connection.
+    ControlOpened(u64, TcpStream),
+    ControlClosed(u64),
 }
 
 struct Sockets {
@@ -110,6 +112,7 @@ struct Router {
     peers: HashMap<String, Peer>,
     /// pack id -> live session id (a pack has one session; a newer one replaces it)
     by_pack: HashMap<String, String>,
+    control_generation: u64,
     tick_count: u32,
     frames: HashMap<String, [f32; FRAME]>,
     peaks: HashMap<String, f32>,
@@ -125,6 +128,7 @@ impl Router {
                 let ids: Vec<String> = self.by_pack.keys().cloned().collect();
                 for id in ids {
                     self.push_state(&id);
+                    self.push_device(&id);
                 }
             }
             Command::Open {
@@ -182,6 +186,40 @@ impl Router {
         }
     }
 
+    /// Tell a hardware node which interface input/output the Manager chose.
+    fn push_device(&mut self, pack_id: &str) {
+        let Some(pack) = self.mixer.pack(pack_id) else { return };
+        if pack.config.kind != control::PackType::Hardware {
+            return;
+        }
+        let device = pack.config.device.clone().unwrap_or_default();
+        let Some(session) = self.by_pack.get(pack_id) else { return };
+        if let Some(peer) = self.peers.get_mut(session) {
+            let text = serde_json::json!({ "type": "device", "input": device.input, "output": device.output });
+            peer.send_json(text.to_string());
+        }
+    }
+
+    /// Bring a (re)connected gateway up to date: live sessions, then every pack's state.
+    fn sync(&mut self) {
+        let sessions: Vec<(String, String)> = self
+            .by_pack
+            .iter()
+            .filter(|(_, session)| self.peers.get(*session).is_some_and(|peer| peer.connected))
+            .map(|(pack, session)| (session.clone(), pack.clone()))
+            .collect();
+        let view: Vec<SyncSession<'_>> = sessions
+            .iter()
+            .map(|(session_id, pack_id)| SyncSession { session_id, pack_id })
+            .collect();
+        emit(&Event::Sync { sessions: &view });
+        for (_, pack) in &sessions {
+            if let Some(state) = self.mixer.pack(pack).map(|p| p.state()) {
+                emit(&Event::PackState(&state));
+            }
+        }
+    }
+
     fn push_state(&mut self, pack_id: &str) {
         let Some(state) = self.mixer.pack(pack_id).map(|pack| pack.state()) else {
             return;
@@ -234,6 +272,7 @@ impl Router {
                         pack_id: &pack,
                     });
                     self.push_state(&pack);
+                    self.push_device(&pack);
                 }
                 PeerEvent::Message(message) => {
                     // Only the pack's live session may drive it.
@@ -310,26 +349,58 @@ impl Router {
     }
 }
 
+/// `--control ADDR` or MIX_ROUTER_CONTROL; the gateway connects here. Loopback by default.
+fn control_address() -> String {
+    let mut args = std::env::args().skip(1);
+    while let Some(flag) = args.next() {
+        if flag == "--control" {
+            if let Some(addr) = args.next() {
+                return addr;
+            }
+        }
+    }
+    std::env::var("MIX_ROUTER_CONTROL").unwrap_or_else(|_| "127.0.0.1:7100".to_owned())
+}
+
 fn main() {
     let (inputs_tx, inputs) = mpsc::sync_channel::<Input>(1_024);
+    let control_addr = control_address();
+    let listener = TcpListener::bind(&control_addr).unwrap_or_else(|error| {
+        eprintln!("mix-router: cannot listen for the gateway on {control_addr}: {error}");
+        std::process::exit(2);
+    });
+    eprintln!("mix-router: control on {control_addr}");
     {
         let inputs = inputs_tx.clone();
         thread::Builder::new()
-            .name("control-reader".into())
+            .name("control-accept".into())
             .spawn(move || {
-                for line in io::stdin().lock().lines().map_while(Result::ok) {
-                    match serde_json::from_str::<Command>(&line) {
-                        Ok(command) => {
-                            if inputs.send(Input::Command(command)).is_err() {
-                                return;
+                let mut generation = 0_u64;
+                for stream in listener.incoming().map_while(Result::ok) {
+                    generation += 1;
+                    let id = generation;
+                    let _ = stream.set_nodelay(true);
+                    let Ok(writer) = stream.try_clone() else { continue };
+                    if inputs.send(Input::ControlOpened(id, writer)).is_err() {
+                        return;
+                    }
+                    let inputs = inputs.clone();
+                    let _ = thread::Builder::new().name("control-reader".into()).spawn(move || {
+                        for line in BufReader::new(stream).lines().map_while(Result::ok) {
+                            match serde_json::from_str::<Command>(&line) {
+                                Ok(command) => {
+                                    if inputs.send(Input::Command(command)).is_err() {
+                                        return;
+                                    }
+                                }
+                                Err(error) => eprintln!("mix-router: bad command: {error}"),
                             }
                         }
-                        Err(error) => eprintln!("mix-router: bad command: {error}"),
-                    }
+                        let _ = inputs.send(Input::ControlClosed(id));
+                    });
                 }
-                let _ = inputs.send(Input::ControlClosed);
             })
-            .expect("spawn control reader");
+            .expect("spawn control listener");
     }
 
     let mut router = Router {
@@ -342,13 +413,12 @@ fn main() {
         mixer: Mixer::default(),
         peers: HashMap::new(),
         by_pack: HashMap::new(),
+        control_generation: 0,
         tick_count: 0,
         frames: HashMap::new(),
         peaks: HashMap::new(),
         last_levels_nonzero: false,
     };
-    emit(&Event::Ready);
-
     let mut next_tick = Instant::now() + TICK;
     loop {
         let now = Instant::now();
@@ -360,7 +430,17 @@ fn main() {
                 source,
                 contents,
             }) => router.handle_datagram(local, source, &contents, Instant::now()),
-            Ok(Input::ControlClosed) => return,
+            Ok(Input::ControlOpened(id, stream)) => {
+                router.control_generation = id;
+                set_sink(Some(stream));
+                emit(&Event::Ready);
+                router.sync();
+            }
+            Ok(Input::ControlClosed(id)) => {
+                if id == router.control_generation {
+                    set_sink(None);
+                }
+            }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }

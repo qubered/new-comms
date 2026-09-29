@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler",
+    "target": "ES2022", "module": "ESNext", "allowImportingTsExtensions": true, "resolveJsonModule": true, "moduleResolution": "Bundler",
     "strict": true, "skipLibCheck": true, "noEmit": true, "lib": ["ES2022", "DOM"]
   },
   "include": ["src"]

@@ -8,6 +8,7 @@ import { Gateway } from "./gateway.ts";
 import type { MixRouter } from "./router.ts";
 import { buildServer, describeClient } from "./server.ts";
 import { Store } from "./store.ts";
+import { validate } from "./validate.ts";
 
 class FakeRouter extends EventEmitter {
   ready = true;
@@ -73,7 +74,7 @@ describe("channels and pack keys stay in step", () => {
 describe("PINs", () => {
   it("never appear in public state, must be four digits, and gate sessions", async () => {
     const { gateway } = setup();
-    expect(() => gateway.createPack({ name: "Bad", pin: "12" })).toThrow(/four digits/);
+    expect(() => gateway.createPack({ name: "Bad", pin: "12" })).toThrow(/pin must match/);
     const pack = gateway.createPack({ name: "Director", pin: "1234" });
     const snapshot = JSON.stringify(gateway.snapshot());
     expect(snapshot).not.toContain("1234");
@@ -129,6 +130,41 @@ describe("snapshot + delta protocol", () => {
     expect((state as Snapshot).live[pack.id]!.connected).toBe(true);
     expect(applyEvent(state as Snapshot, { type: "live", rev: rev + 5, packId: pack.id, live })).toBe("resync");
     expect(applyEvent(null, { type: "live", rev: 1, packId: pack.id, live })).toBe("resync");
+  });
+});
+
+describe("schema validation", () => {
+  it("rejects unknown fields, bad enums and out-of-range volumes with a message naming the field", () => {
+    const { gateway } = setup();
+    expect(() => gateway.createPack({ name: "A", colour: "red" })).toThrow(/additional properties/);
+    expect(() => gateway.createChannel({ name: "A", type: "conference" })).toThrow(/type must be equal to one of/);
+    const channel = gateway.createChannel({ name: "P" });
+    expect(() => gateway.createPack({ name: "A", keys: [{ channelId: channel.id, volume: 400 }] })).toThrow(/keys\.0\.volume/);
+    expect(() => gateway.registerNode({ deviceName: "" })).toThrow(/availableInputs|deviceName/);
+  });
+});
+
+describe("contracts", () => {
+  it("the gateway's own snapshot and SSE events conform to the schema", () => {
+    const { gateway } = setup();
+    const channel = gateway.createChannel({ name: "Production", subText: "SM" });
+    gateway.createPack({ name: "SM", pin: "1234", keys: [{ channelId: channel.id, mode: "auto" }] });
+    const events: unknown[] = [];
+    gateway.on("event", (event) => events.push(event));
+    gateway.createChannel({ name: "Other" });
+    expect(() => validate("Snapshot", gateway.snapshot())).not.toThrow();
+    expect(() => validate("SnapshotEvent", { type: "snapshot", ...gateway.snapshot() })).not.toThrow();
+    for (const event of events) expect(() => validate("ServerEvent", event)).not.toThrow();
+  });
+});
+
+describe("mixer reconnect", () => {
+  it("rebuilds who is connected from the router's sync after the gateway restarts", () => {
+    const { gateway, router } = setup();
+    const pack = gateway.createPack({ name: "SM" });
+    router.emit("event", { event: "sync", sessions: [{ sessionId: "s9", packId: pack.id }] });
+    expect(gateway.live.get(pack.id)?.connected).toBe(true);
+    expect(gateway.sessions.get("s9")).toBe(pack.id);
   });
 });
 

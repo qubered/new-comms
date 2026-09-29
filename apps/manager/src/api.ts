@@ -1,4 +1,4 @@
-import type { Channel, Pack, PublicPack } from "@comms/protocol";
+import type { Channel, ChannelWrite, PackWrite, PublicPack } from "@comms/protocol";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
@@ -14,11 +14,11 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 export const api = {
-  createPack: (body: Partial<Pack>) => call<PublicPack>("POST", "/packs", body),
-  updatePack: (id: string, body: Partial<Pack>) => call<PublicPack>("PATCH", `/packs/${id}`, body),
+  createPack: (body: PackWrite) => call<PublicPack>("POST", "/packs", body),
+  updatePack: (id: string, body: PackWrite) => call<PublicPack>("PATCH", `/packs/${id}`, body),
   deletePack: (id: string) => call<void>("DELETE", `/packs/${id}`),
-  createChannel: (body: Partial<Channel>) => call<Channel>("POST", "/channels", body),
-  updateChannel: (id: string, body: Partial<Channel>) => call<Channel>("PATCH", `/channels/${id}`, body),
+  createChannel: (body: ChannelWrite) => call<Channel>("POST", "/channels", body),
+  updateChannel: (id: string, body: ChannelWrite) => call<Channel>("PATCH", `/channels/${id}`, body),
   deleteChannel: (id: string) => call<void>("DELETE", `/channels/${id}`),
   health: () => call<{ ok: boolean; mixer: boolean; online: number }>("GET", "/health"),
 };

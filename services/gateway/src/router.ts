@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { connect, type Socket } from "node:net";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
 import type { Channel, Pack } from "@comms/protocol";
@@ -14,6 +14,7 @@ export interface RouterPackState {
 
 export type RouterEvent =
   | { event: "ready" }
+  | { event: "sync"; sessions: { sessionId: string; packId: string }[] }
   | { event: "answer"; sessionId: string; sdp: string }
   | { event: "rejected"; sessionId: string; detail: string }
   | { event: "connected"; sessionId: string; packId: string }
@@ -21,26 +22,37 @@ export type RouterEvent =
   | ({ event: "packState" } & RouterPackState)
   | { event: "levels"; levels: Record<string, number> };
 
-/** Supervises the mix-router sidecar and speaks its line-JSON protocol. */
+/**
+ * The gateway's link to mix-router: line-delimited JSON over a local TCP connection.
+ * mix-router runs on its own (possibly on another box); this reconnects until it is there,
+ * and re-sends the config every time it comes back.
+ */
 export class MixRouter extends EventEmitter {
-  private child?: ChildProcess;
+  private socket?: Socket;
   private stopped = false;
+  private retry?: NodeJS.Timeout;
   private pending = new Map<string, { resolve: (sdp: string) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   ready = false;
   private lastConfig?: string;
+  private warned = false;
 
-  constructor(private readonly binary: string) {
+  constructor(private readonly address: string) {
     super();
   }
 
   start(): void {
     this.stopped = false;
-    const child = spawn(this.binary, [], { stdio: ["pipe", "pipe", "inherit"] });
-    this.child = child;
-    child.on("error", (error) => {
-      console.error(`mix-router failed to start (${this.binary}): ${error.message}`);
+    const [host, port] = this.address.split(/:(?=[^:]*$)/) as [string, string];
+    const socket = connect({ host, port: Number(port) });
+    this.socket = socket;
+    socket.setNoDelay(true);
+    socket.on("connect", () => {
+      this.warned = false;
+      console.log(`connected to mix-router at ${this.address}`);
     });
-    createInterface({ input: child.stdout! }).on("line", (line) => {
+    const lines = createInterface({ input: socket });
+    lines.on("error", () => {}); // socket errors are handled below; readline re-emits them
+    lines.on("line", (line) => {
       let event: RouterEvent;
       try {
         event = JSON.parse(line) as RouterEvent;
@@ -49,25 +61,28 @@ export class MixRouter extends EventEmitter {
       }
       this.handle(event);
     });
-    child.on("exit", (code) => {
+    socket.on("error", (error) => {
+      if (!this.warned) console.error(`mix-router at ${this.address} is not reachable (${error.message}); retrying`);
+      this.warned = true;
+    });
+    socket.on("close", () => {
+      const wasReady = this.ready;
       this.ready = false;
-      this.child = undefined;
+      this.socket = undefined;
       for (const [id, entry] of this.pending) {
         clearTimeout(entry.timer);
-        entry.reject(new Error("mix-router exited"));
+        entry.reject(new Error("mix-router disconnected"));
         this.pending.delete(id);
       }
-      this.emit("exit");
-      if (!this.stopped) {
-        console.error(`mix-router exited (${code}); restarting`);
-        setTimeout(() => this.start(), 1000);
-      }
+      if (wasReady) this.emit("exit");
+      if (!this.stopped) this.retry = setTimeout(() => this.start(), 1000);
     });
   }
 
   stop(): void {
     this.stopped = true;
-    this.child?.kill();
+    clearTimeout(this.retry);
+    this.socket?.destroy();
   }
 
   private handle(event: RouterEvent): void {
@@ -89,17 +104,18 @@ export class MixRouter extends EventEmitter {
   }
 
   private write(line: string): void {
-    this.child?.stdin?.write(line + "\n");
+    this.socket?.write(line + "\n");
   }
 
   configure(channels: Channel[], packs: Pack[]): void {
     const line = JSON.stringify({
       cmd: "config",
       channels: channels.map(({ id, type, members }) => ({ id, type, members })),
-      packs: packs.map(({ id, type, masterVolume, keys }) => ({
+      packs: packs.map(({ id, type, masterVolume, keys, device }) => ({
         id,
         type,
         masterVolume,
+        device: device ? { input: device.input ?? null, output: device.output ?? null } : undefined,
         keys: keys.map(({ channelId, volume, pgmListen }) => ({ channelId, volume, pgmListen })),
       })),
     });

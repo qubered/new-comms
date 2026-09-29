@@ -130,9 +130,15 @@ fn main() {
         let exe = std::env::current_exe().unwrap();
         exe.parent().unwrap().join("mix-router").display().to_string()
     });
-    let mut child = Command::new(&binary).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().expect("start mix-router");
-    let mut stdin = child.stdin.take().unwrap();
-    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let control = format!("127.0.0.1:{port}");
+    let mut child = Command::new(&binary).args(["--control", &control]).stdin(Stdio::null()).spawn().expect("start mix-router");
+    let stream = (0..50)
+        .find_map(|_| std::net::TcpStream::connect(&control).ok().or_else(|| { std::thread::sleep(Duration::from_millis(100)); None }))
+        .expect("connect to mix-router control port");
+    let mut stdin = stream.try_clone().unwrap();
+    let lines = BufReader::new(stream).lines();
+    let mut lines = lines;
     let mut send = move |value: serde_json::Value| {
         writeln!(stdin, "{value}").unwrap();
         stdin.flush().unwrap();

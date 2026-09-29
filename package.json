@@ -14,9 +14,10 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present && cargo test --workspace",
     "seed": "node scripts/seed.mjs",
-    "show": "cargo build --release && npm run build && npm run start -w @comms/gateway",
+    "show": "node scripts/dev.mjs --show",
     "node": "cargo run --release -p comms-node --",
-    "smoke": "cargo build --release -p mix-router && ./target/release/smoke"
+    "smoke": "cargo build --release -p mix-router && ./target/release/smoke",
+    "mixer": "cargo run --release -p mix-router --"
   },
   "devDependencies": {
     "@vitejs/plugin-basic-ssl": "^2.0.0",

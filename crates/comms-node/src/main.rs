@@ -4,34 +4,15 @@
 //!   comms-node --list
 //!
 //! The node registers itself and appears in Manager -> Hardware. Its input and output are
-//! chosen there; the node polls the gateway and restarts its audio when they change.
+//! chosen there and pushed to the node over its WebRTC data channel.
 
 mod audio;
 mod session;
 
 use serde::Deserialize;
 use std::net::{IpAddr, ToSocketAddrs, UdpSocket};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
-
-#[derive(Deserialize, Clone, PartialEq, Debug, Default)]
-struct Device {
-    input: Option<String>,
-    output: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct PublicPack {
-    id: String,
-    device: Option<Device>,
-}
-
-#[derive(Deserialize)]
-struct State {
-    packs: Vec<PublicPack>,
-}
 
 struct Args {
     gateway: String,
@@ -96,16 +77,6 @@ fn register(args: &Args, devices: &audio::Devices, ip: IpAddr) -> Result<String,
     Ok(response.pack_id)
 }
 
-fn desired(args: &Args, pack_id: &str) -> Result<Device, String> {
-    let state: State = ureq::get(&format!("{}/api/v1/state", args.gateway))
-        .call()
-        .map_err(|e| e.to_string())?
-        .into_json()
-        .map_err(|e| e.to_string())?;
-    let pack = state.packs.into_iter().find(|p| p.id == pack_id).ok_or("this node's pack was removed")?;
-    Ok(pack.device.unwrap_or_default())
-}
-
 fn main() {
     let Some(args) = parse_args() else { return };
     let devices = audio::open_devices(args.device.as_deref());
@@ -125,58 +96,11 @@ fn main() {
     }
 }
 
-/// Register, then run one media session until the link drops or the Manager changes our config.
+/// Register, then run one media session until the link drops. The Manager's input/output
+/// choice arrives over the session's data channel and is applied without reconnecting.
 fn run_once(args: &Args, devices: &audio::Devices) -> Result<(), String> {
     let ip = local_ip(&args.gateway)?;
     let pack_id = register(args, devices, ip)?;
-    let config = desired(args, &pack_id)?;
-    eprintln!("registered as pack {pack_id}; input {:?}, output {:?}", config.input, config.output);
-
-    let capture = audio::new_queue();
-    let playback = audio::new_queue();
-    // Streams stay alive for the duration of this session.
-    let mut streams = Vec::new();
-    let mut use_capture = None;
-    let mut use_playback = None;
-    if let (Some(device), Some(channel)) = (&devices.input, config.input.as_deref().and_then(|l| audio::channel_of(l, "In"))) {
-        streams.push(audio::start_capture(device, channel, capture.clone())?);
-        use_capture = Some(capture);
-    }
-    if let (Some(device), Some(channel)) = (&devices.output, config.output.as_deref().and_then(|l| audio::channel_of(l, "Out"))) {
-        streams.push(audio::start_playback(device, channel, playback.clone())?);
-        use_playback = Some(playback);
-    }
-
-    // Watch the Manager for input/output changes; a change ends the session and we start over.
-    let stop = Arc::new(AtomicBool::new(false));
-    {
-        let stop = Arc::clone(&stop);
-        let (gateway, name) = (args.gateway.clone(), args.name.clone());
-        let watcher = Args { gateway, name, device: None };
-        let (pack_id, config) = (pack_id.clone(), config.clone());
-        thread::spawn(move || {
-            while !stop.load(Ordering::Relaxed) {
-                thread::sleep(Duration::from_secs(2));
-                match desired(&watcher, &pack_id) {
-                    Ok(now) if now != config => {
-                        eprintln!("configuration changed; restarting audio");
-                        stop.store(true, Ordering::Relaxed);
-                    }
-                    Ok(_) | Err(_) => {}
-                }
-            }
-        });
-    }
-
-    let result = session::run(session::Params {
-        gateway: &args.gateway,
-        pack_id: &pack_id,
-        local_ip: ip,
-        capture: use_capture,
-        playback: use_playback,
-        stop: Arc::clone(&stop),
-    });
-    stop.store(true, Ordering::Relaxed);
-    drop(streams);
-    result
+    eprintln!("registered as pack {pack_id}");
+    session::run(session::Params { gateway: &args.gateway, pack_id: &pack_id, local_ip: ip, devices })
 }

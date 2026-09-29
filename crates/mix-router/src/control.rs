@@ -3,8 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{self, Write};
-use std::net::IpAddr;
+use std::io::Write;
+use std::net::{IpAddr, TcpStream};
+use std::sync::Mutex;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -49,6 +50,12 @@ fn default_pgm_listen() -> PgmListen {
     PgmListen::Always
 }
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct DeviceConfig {
+    pub input: Option<String>,
+    pub output: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackConfig {
@@ -57,6 +64,9 @@ pub struct PackConfig {
     pub kind: PackType,
     pub master_volume: f32,
     pub keys: Vec<KeyConfig>,
+    /// Hardware packs only: which interface input/output the node should use.
+    #[serde(default)]
+    pub device: Option<DeviceConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,6 +119,8 @@ pub struct PackState {
 #[serde(tag = "event", rename_all = "camelCase")]
 pub enum Event<'a> {
     Ready,
+    /// Sent on every gateway (re)connect: the sessions that are live right now.
+    Sync { sessions: &'a [SyncSession<'a>] },
     #[serde(rename_all = "camelCase")]
     Answer { session_id: &'a str, sdp: &'a str },
     #[serde(rename_all = "camelCase")]
@@ -125,10 +137,35 @@ pub enum Event<'a> {
     Levels { levels: &'a HashMap<String, f32> },
 }
 
-pub fn emit(event: &Event<'_>) {
-    let mut out = io::stdout().lock();
-    if serde_json::to_writer(&mut out, event).is_ok() {
-        let _ = out.write_all(b"\n");
-        let _ = out.flush();
+/// The gateway's control connection. Events are dropped while none is attached; the router
+/// keeps mixing, and a reconnecting gateway is brought up to date with a `sync`.
+static SINK: Mutex<Option<TcpStream>> = Mutex::new(None);
+
+pub fn set_sink(stream: Option<TcpStream>) {
+    if let Ok(mut sink) = SINK.lock() {
+        if let Some(old) = sink.take() {
+            let _ = old.shutdown(std::net::Shutdown::Both);
+        }
+        *sink = stream;
     }
+}
+
+pub fn emit(event: &Event<'_>) {
+    let Ok(mut sink) = SINK.lock() else { return };
+    let Some(stream) = sink.as_mut() else { return };
+    let mut line = match serde_json::to_vec(event) {
+        Ok(line) => line,
+        Err(_) => return,
+    };
+    line.push(b'\n');
+    if stream.write_all(&line).is_err() {
+        *sink = None;
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncSession<'a> {
+    pub session_id: &'a str,
+    pub pack_id: &'a str,
 }

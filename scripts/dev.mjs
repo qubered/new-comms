@@ -1,19 +1,28 @@
-// npm run dev: build mix-router, then run the gateway and both apps.
+// npm run dev:  mix-router, gateway and both apps with hot reload.
+// npm run show: release builds, then mix-router and the gateway serving the built apps.
+// mix-router is its own process; the gateway connects to it (MIX_ROUTER_ADDR, default 127.0.0.1:7100).
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 
-const cargo = spawnSync("cargo", ["build", "--release", "-p", "mix-router"], { stdio: "inherit" });
-if (cargo.status !== 0) process.exit(cargo.status ?? 1);
+const show = process.argv.includes("--show");
+const run = (command, args) => {
+  const result = spawnSync(command, args, { stdio: "inherit" });
+  if (result.status !== 0) process.exit(result.status ?? 1);
+};
+run("cargo", ["build", "--release", "-p", "mix-router"]);
+if (show) run("npm", ["run", "build"]);
 
 const services = [
-  ["gateway", ["run", "dev", "-w", "@comms/gateway"]],
-  ["talk", ["run", "dev", "-w", "@comms/talk"]],
+  ["mixer", "./target/release/mix-router", []],
+  ["gateway", "npm", show ? ["run", "start", "-w", "@comms/gateway"] : ["run", "dev", "-w", "@comms/gateway"]],
 ];
-if (existsSync("apps/manager/package.json")) services.push(["manager", ["run", "dev", "-w", "@comms/manager"]]);
+if (!show) {
+  services.push(["talk", "npm", ["run", "dev", "-w", "@comms/talk"]]);
+  services.push(["manager", "npm", ["run", "dev", "-w", "@comms/manager"]]);
+}
 
-const children = services.map(([name, args]) => {
-  const child = spawn("npm", args, { stdio: ["ignore", "pipe", "pipe"] });
+const children = services.map(([name, command, args]) => {
+  const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
   const tag = `[${name}] `;
   for (const stream of [child.stdout, child.stderr]) {
     stream.on("data", (chunk) => process.stdout.write(String(chunk).replace(/^(?=.)/gm, tag)));
@@ -26,11 +35,13 @@ const children = services.map(([name, args]) => {
 });
 
 const ip = Object.values(networkInterfaces()).flat().find((i) => i?.family === "IPv4" && !i.internal)?.address ?? "localhost";
-setTimeout(() => {
-  console.log(`\n  Talk (phones):  https://${ip}:5173   (accept the certificate warning once)`);
-  if (existsSync("apps/manager/package.json")) console.log(`  Manager:        https://${ip}:5174`);
-  console.log(`  Gateway:        http://${ip}:8080/api/v1/health\n`);
-}, 2500);
+if (!show) {
+  setTimeout(() => {
+    console.log(`\n  Talk (phones):  https://${ip}:5173   (accept the certificate warning once)`);
+    console.log(`  Manager:        https://${ip}:5174`);
+    console.log(`  Gateway:        http://${ip}:8080/api/v1/health\n`);
+  }, 2500);
+}
 
 let closing = false;
 function shutdown(code = 0) {

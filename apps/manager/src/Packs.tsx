@@ -375,7 +375,7 @@ function DeviceSelect({ pack, field, guard }: { pack: PublicPack; field: "input"
       aria-label={field === "input" ? "Input" : "Output"}
       value={device?.[field] ?? ""}
       disabled={!device}
-      onChange={(e) => void guard(api.updatePack(pack.id, { device: { [field]: e.target.value } } as never))}
+      onChange={(e) => void guard(api.updatePack(pack.id, { device: { [field]: e.target.value } }))}
     >
       {options.map((name) => (
         <option key={name}>{name}</option>

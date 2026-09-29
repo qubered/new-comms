@@ -17,7 +17,7 @@ export function Hardware({
 }) {
   const nodes = packs.filter((p) => p.type === "hardware");
   const set = (pack: PublicPack, field: "input" | "output", value: string) =>
-    api.updatePack(pack.id, { device: { [field]: value } } as never).catch((error: Error) => onError(error.message));
+    api.updatePack(pack.id, { device: { [field]: value } }).catch((error: Error) => onError(error.message));
 
   return (
     <section className="tab">

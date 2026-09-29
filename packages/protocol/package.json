@@ -5,13 +5,18 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./react": "./src/useServerState.ts"
+    "./react": "./src/useServerState.ts",
+    "./schema": "./schema/protocol.schema.json"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "generate": "node scripts/generate.mjs",
+    "generate:check": "node scripts/generate.mjs --check",
+    "typecheck": "npm run generate:check && tsc --noEmit -p tsconfig.json"
   },
   "peerDependencies": {
     "react": "^19.0.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "json-schema-to-typescript": "^15.0.4"
+  }
 }

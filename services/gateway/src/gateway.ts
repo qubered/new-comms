@@ -4,7 +4,9 @@ import type {
   Channel,
   ChannelType,
   HardwareDevice,
+  ChannelWrite,
   NodeRegistration,
+  PackWrite,
   Pack,
   PackKey,
   PackLiveState,
@@ -12,17 +14,12 @@ import type {
   ServerEvent,
   Snapshot,
 } from "@comms/protocol";
+import { HttpError } from "./errors.ts";
 import { MixRouter, type RouterEvent } from "./router.ts";
+import { validate } from "./validate.ts";
 import { Store, clamp, normaliseKey, reconcile } from "./store.ts";
 
-export class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export { HttpError };
 
 const emptyLive = (packId: string, masterVolume = 80): PackLiveState => ({
   packId,
@@ -115,6 +112,15 @@ export class Gateway extends EventEmitter {
 
   private onRouter(event: RouterEvent): void {
     switch (event.event) {
+      case "sync": {
+        // The router kept running while we were away: rebuild who is connected.
+        this.sessions.clear();
+        for (const { sessionId, packId } of event.sessions) {
+          this.sessions.set(sessionId, packId);
+          this.patchLive(packId, { connected: true });
+        }
+        break;
+      }
       case "connected":
         this.patchLive(event.packId, { connected: true });
         break;
@@ -212,7 +218,8 @@ export class Gateway extends EventEmitter {
     if (pack.pin && pack.pin !== pin) throw new HttpError(403, "wrong PIN");
   }
 
-  createPack(body: Record<string, unknown>): Pack {
+  createPack(raw: unknown): Pack {
+    const body = validate<PackWrite>("PackWrite", raw);
     const name = String(body.name ?? "").trim();
     if (!name) throw new HttpError(400, "name is required");
     const pack: Pack = {
@@ -229,7 +236,8 @@ export class Gateway extends EventEmitter {
     return pack;
   }
 
-  updatePack(id: string, body: Record<string, unknown>): Pack {
+  updatePack(id: string, raw: unknown): Pack {
+    const body = validate<PackWrite>("PackWrite", raw);
     const pack = this.findPack(id);
     if (typeof body.name === "string") {
       if (!body.name.trim()) throw new HttpError(400, "name is required");
@@ -259,7 +267,8 @@ export class Gateway extends EventEmitter {
     this.pushConfig();
   }
 
-  createChannel(body: Record<string, unknown>): Channel {
+  createChannel(raw: unknown): Channel {
+    const body = validate<ChannelWrite>("ChannelWrite", raw);
     const name = String(body.name ?? "").trim();
     if (!name) throw new HttpError(400, "name is required");
     const channel: Channel = {
@@ -289,7 +298,8 @@ export class Gateway extends EventEmitter {
     }
   }
 
-  updateChannel(id: string, body: Record<string, unknown>): Channel {
+  updateChannel(id: string, raw: unknown): Channel {
+    const body = validate<ChannelWrite>("ChannelWrite", raw);
     const channel = this.findChannel(id);
     if (typeof body.name === "string") {
       if (!body.name.trim()) throw new HttpError(400, "name is required");
@@ -313,7 +323,8 @@ export class Gateway extends EventEmitter {
 
   // ---- hardware nodes ----
 
-  registerNode(body: NodeRegistration): Pack {
+  registerNode(raw: unknown): Pack {
+    const body = validate<NodeRegistration>("NodeRegistration", raw);
     const { deviceName, availableInputs = [], availableOutputs = [], address } = body;
     if (!deviceName) throw new HttpError(400, "deviceName is required");
     let pack = this.packs.find((p) => p.type === "hardware" && p.device?.name === deviceName);

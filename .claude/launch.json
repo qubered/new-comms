@@ -14,6 +14,12 @@
       "port": 8765
     },
     {
+      "name": "mixer",
+      "runtimeExecutable": "./target/release/mix-router",
+      "runtimeArgs": [],
+      "port": 7100
+    },
+    {
       "name": "gateway",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
