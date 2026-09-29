@@ -66,6 +66,8 @@ pub struct PackConfig {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "camelCase")]
 pub enum Command {
+    Stats,
+    ConfigPorts { ports: Vec<crate::graph::PortConfig>, crosspoints: Vec<crate::graph::Crosspoint> },
     /// The first line a gateway sends: it claims the control link.
     Hello,
     #[serde(rename_all = "camelCase")]
@@ -133,9 +135,10 @@ pub enum Event<'a> {
         reason: &'a str,
     },
     PackState(&'a PackState),
+    PortState(&'a crate::graph::PortState),
     /// Mixer health, every two seconds: time spent per 10 ms cycle and peers connected.
     #[serde(rename_all = "camelCase")]
-    Stats { tick_avg_us: u32, tick_max_us: u32, peers: usize },
+    Stats { tick_avg_us: u32, tick_max_us: u32, peers: usize, queues: serde_json::Value },
     Levels { levels: &'a HashMap<String, f32> },
 }
 
