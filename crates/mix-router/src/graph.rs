@@ -47,6 +47,19 @@ pub struct Trigger {
     #[serde(default)]
     pub functions: Vec<serde_json::Value>,
 }
+impl Trigger {
+    fn matches_key(&self, key: &str) -> bool {
+        if key == "reply" { self.kind == "reply" }
+        else { self.kind == "key" && self.key.is_some_and(|n| key.parse::<u8>() == Ok(n)) }
+    }
+    fn opens_mic(&self, owner: &str) -> bool {
+        self.functions.iter().any(|function| match function.get("fn").and_then(|f|f.as_str()) {
+            Some("callToPort" | "callToConference" | "callToGroup" | "callToIFB" | "reply") => true,
+            Some("routeAudio") => function.get("from").and_then(|from|from.as_str()) == Some(owner),
+            _ => false,
+        })
+    }
+}
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum Gate { Always(String), Trigger { port: String, trigger: Trigger } }
@@ -118,7 +131,8 @@ impl Graph {
         self.ports = configs.into_iter().map(|config| {
             let state = PortState { port_id: config.id.clone(), master_volume: config.station.as_ref().map_or(100.0, |s|s.master_volume), volumes: config.station.as_ref().map_or_else(HashMap::new, |s|s.volumes.clone()), ..Default::default() };
             let mut p = old.remove(&config.id).unwrap_or(Port { config: config.clone(), state, attack_ms: 0.0, vox_energy: 0.0, vox_samples: 0, hang_ms: 0.0, loopback: false, reply: None });
-            p.state.keys.retain(|key,_| config.triggers.iter().any(|t| if key == "reply" { t.kind == "reply" } else { t.kind == "key" && t.key.map(|n| n.to_string()) == Some(key.clone()) }));
+            let mic_off = p.state.mic_off;
+            p.state.keys.retain(|key,_| config.triggers.iter().any(|t|t.matches_key(key) && (!mic_off || !t.opens_mic(&config.id))));
             if let Some(s) = &config.station {
                 if p.config.station.as_ref().map(|old| old.master_volume) != Some(s.master_volume) { p.state.master_volume = s.master_volume; }
                 if p.config.station.as_ref().map(|old| &old.volumes) != Some(&s.volumes) { p.state.volumes = s.volumes.clone(); }
@@ -152,10 +166,17 @@ impl Graph {
         match message {
             Message::Key { key, on } => {
                 let key = if key.as_str() == Some("reply") { "reply".into() } else if let Some(n) = key.as_u64().filter(|n| (1..=6).contains(n)) { n.to_string() } else { return false };
-                if !p.config.triggers.iter().any(|t| if key == "reply" { t.kind == "reply" } else { t.kind == "key" && t.key.map(|n| n.to_string()) == Some(key.clone()) }) { return false; }
-                p.state.keys.insert(key, on && !p.state.mic_off);
+                let Some(trigger) = p.config.triggers.iter().find(|t|t.matches_key(&key)) else {return false;};
+                p.state.keys.insert(key, on && (!p.state.mic_off || !trigger.opens_mic(id)));
             }
-            Message::MicOff { on } => { p.state.mic_off = on; if on { p.state.keys.clear(); } }
+            Message::MicOff { on } => {
+                p.state.mic_off = on;
+                if on {
+                    // Release microphone keys, including mixed-function keys, so unmuting
+                    // cannot resume a call. Monitoring and remote routes keep their state.
+                    p.state.keys.retain(|key,_| p.config.triggers.iter().any(|t|t.matches_key(key) && !t.opens_mic(id)));
+                }
+            }
             Message::Volume { source, volume } => { if !self.indices.contains_key(&source) || !volume.is_finite() { return false; } p.state.volumes.insert(source,volume.clamp(0.0,100.0)); }
             Message::MasterVolume { volume } => { if !volume.is_finite() { return false; } p.state.master_volume=volume.clamp(0.0,100.0); }
             Message::Loopback { on } => p.loopback=on,
@@ -371,6 +392,59 @@ mod tests {
         g.release("a");g.prepare(&HashMap::new());g.prepare(&HashMap::new());
         assert!(!g.state("a").unwrap().vox_open);
         assert!(g.state("b").unwrap().incoming.is_empty());
+    }
+
+    #[test]
+    fn mic_off_preserves_and_accepts_monitor_and_third_party_route_keys() {
+        let mut a=config("a","station");
+        a["triggers"]=json!([
+            {"kind":"key","key":1,"functions":[{"fn":"listenToPort","from":"mic"}]},
+            {"kind":"key","key":2,"functions":[{"fn":"routeAudio","from":"mic","to":"b"}]}
+        ]);
+        let mut g=setup(vec![a,config("b","station"),config("mic","input")],vec![
+            edge("mic","a",key("a"),"audio"),
+            edge("mic","b",json!({"port":"a","trigger":{"kind":"key","key":2}}),"audio")
+        ]);
+        let f=frames(&[("a",0.1),("mic",0.2)]);
+        press(&mut g,"a",true);
+        g.apply("a",Message::Key{key:json!(2),on:true});
+        g.apply("a",Message::MicOff{on:true});g.prepare(&f);
+        assert_eq!(heard(&g,"a",&f),0.2,"muting the microphone must preserve a listen key");
+        assert_eq!(heard(&g,"b",&f),0.2,"muting the owner must preserve another source's route");
+        for key in [1,2] {g.apply("a",Message::Key{key:json!(key),on:false});}
+        g.prepare(&f);assert_eq!(heard(&g,"a",&f),0.0);assert_eq!(heard(&g,"b",&f),0.0);
+        for key in [1,2] {g.apply("a",Message::Key{key:json!(key),on:true});}
+        g.prepare(&f);assert_eq!(heard(&g,"a",&f),0.2);assert_eq!(heard(&g,"b",&f),0.2);
+        // Editing a held monitor key into a talk key while muted must not arm the mic.
+        let mut changed=config("a","station");
+        changed["triggers"]=json!([{"kind":"key","key":1,"functions":[{"fn":"callToPort","to":"b"}]}]);
+        g.configure(serde_json::from_value(json!([changed,config("b","station")])).unwrap(),serde_json::from_value(json!([edge("a","b",key("a"),"call")])).unwrap()).unwrap();
+        g.apply("a",Message::MicOff{on:false});g.prepare(&f);
+        assert_eq!(heard(&g,"b",&f),0.0);
+    }
+    #[test]
+    fn mic_off_releases_call_reply_and_mixed_keys_without_reopening_on_unmute() {
+        let mut a=config("a","station");
+        a["triggers"]=json!([
+            {"kind":"key","key":1,"functions":[{"fn":"callToPort","to":"b"}]},
+            {"kind":"key","key":2,"functions":[{"fn":"listenToPort","from":"mic"},{"fn":"routeAudio","from":"a","to":"b"}]},
+            {"kind":"reply","functions":[{"fn":"reply"}]}
+        ]);
+        let mut g=setup(vec![a,config("b","station"),config("mic","input")],vec![
+            edge("a","b",key("a"),"call"),edge("b","a",json!("always"),"call"),
+            edge("a","b",json!({"port":"a","trigger":{"kind":"key","key":2}}),"audio"),
+            edge("mic","a",json!({"port":"a","trigger":{"kind":"key","key":2}}),"audio")
+        ]);
+        let f=frames(&[("a",0.1),("mic",0.2)]);g.prepare(&f);
+        for key in [json!(1),json!(2),json!("reply")] {g.apply("a",Message::Key{key,on:true});}
+        g.prepare(&f);assert!((heard(&g,"b",&f)-0.3).abs()<1e-6);
+        g.apply("a",Message::MicOff{on:true});g.prepare(&f);
+        assert_eq!(heard(&g,"b",&f),0.0);assert!(g.state("a").unwrap().keys.values().all(|on|!*on));
+        for key in [json!(1),json!(2),json!("reply")] {g.apply("a",Message::Key{key,on:true});}
+        g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.0);
+        g.apply("a",Message::MicOff{on:false});g.prepare(&f);
+        assert_eq!(heard(&g,"b",&f),0.0,"muted presses must not arm a call for unmute");
+        press(&mut g,"a",true);g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.1);
     }
 
 }
