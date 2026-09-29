@@ -4,6 +4,12 @@
 **Mockup:** `docs/design/mockups/manager-v2.html`
 **Style:** rapid prototyping. Phases, not tasks. Each phase ends with something you can run.
 
+**Implementation status (29 September 2026):** phases 0–6 software implemented and
+verified. Physical phone/WiFi/second-machine acceptance remains unverified; the user
+requested software completion and documentation of those checks because devices were
+unavailable. Results and remaining acceptance work:
+[`v2 verification`](../../research/2026-09-29-v2-verification.md).
+
 What changes: the data model (ports, triggers, functions, derived matrix) and everything
 that touches it. What stays: the process layout (mix-router on TCP control, gateway,
 Talk, Manager, comms-node), WebRTC/Opus transport, SSE snapshot + deltas, schema-first

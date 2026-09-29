@@ -273,3 +273,20 @@ node ports with Always functions. Key volumes → operator volumes; trims carrie
 Multi-site trunking, GPIO and logic, call signalling and beeps, dim panel speaker,
 dim XP level as a standalone function, audiopatch, clone output, recording, accounts,
 remote access, conference-of-conferences, dual-function keys, per-talker trim.
+
+## 11. Implementation decisions (29 September 2026)
+
+The gateway owns expansion; Manager reads the derived matrix. Talk receives the full
+snapshot. Vox uses a 10 ms RMS window with defaults of 20 ms attack and 600 ms hang.
+On-call gates resolve in one pass without recursively propagating calls. All in-use
+hardware tracks stay active. The router mixes every 5 ms but retains 10 ms downstream
+Opus pending the plan's real-phone comparison.
+
+An empty conference is reported under Needs attention rather than blocking creation,
+so operators can create it before adding members. Conference program sources for IFB
+are supported as in the Manager reference mockup; arbitrary bus chains remain invalid.
+The matrix opens each crosspoint's owning function for edits rather than storing a
+second independent routing configuration.
+
+See the [verification record](../../research/2026-09-29-v2-verification.md) for measured
+software results and physical-device acceptance still outstanding.
