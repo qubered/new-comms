@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Port } from "@comms/protocol";
+import { percentile } from "./latencyStats.ts";
 import { Intercom } from "./intercom.ts";
 
 const CLICKS = 20; // bursts
@@ -25,10 +26,6 @@ class Detector extends AudioWorkletProcessor {
 }
 registerProcessor("detector", Detector);
 `;
-
-function percentile(sorted: number[], p: number): number {
-  return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]!;
-}
 
 /**
  * Round-trip latency of the software path: a synthetic click is sent up as this pack's
@@ -194,7 +191,8 @@ export function Latency({ ports, onBack }: { ports: Port[]; onBack(): void }) {
             station, has the mixer play it back, and times the round trip. It
             measures the browser, network and mixer. A real microphone and
             speaker add more, so use the clap test for the full figure. One way
-            is roughly half the round trip.
+            below is half the round trip, a rough estimate that assumes
+            symmetric paths.
           </p>
           <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             Station to use (it is taken over while the test runs)
