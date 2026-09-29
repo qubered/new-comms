@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="600" viewBox="0 0 640 600" role="img" aria-labelledby="title description">
+  <title id="title">One local network connects the show</title>
+  <desc id="description">Crew members use Talk and the show owner uses Manager. Both connect over the local network to the show computer. An optional hardware node connects physical audio inputs and outputs to that same network.</desc>
+  <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto-start-reverse"><path d="M1 1L7 4.5L1 8" fill="none" stroke="#a6c4f4" stroke-width="1.6"/></marker></defs>
+  <style>
+    text {font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;fill:#f0f3f7;text-anchor:middle}
+    .heading {font-size:29px;font-weight:650}.label {font-size:27px;font-weight:600}.sub {font-size:22px;fill:#c5ced9}
+    .box {fill:#20262e;stroke:#566375;stroke-width:1.5}.wire {fill:none;stroke:#a6c4f4;stroke-width:2.5}
+  </style>
+  <rect width="640" height="600" fill="#14171b"/>
+  <text class="heading" x="320" y="43">One local show</text>
+  <path class="wire" d="M155 178V222M485 178V222M155 286V339M485 286V339M485 438V494"/>
+  <rect class="box" x="30" y="80" width="250" height="98" rx="8"/>
+  <text class="label" x="155" y="121">Talk</text><text class="sub" x="155" y="153">Phones and laptops</text>
+  <rect class="box" x="360" y="80" width="250" height="98" rx="8"/>
+  <text class="label" x="485" y="121">Manager</text><text class="sub" x="485" y="153">Set up the show</text>
+  <rect x="30" y="225" width="580" height="58" rx="8" fill="#25364c" stroke="#a6c4f4" stroke-width="1.5"/>
+  <text class="label" x="320" y="263">Local WiFi or wired network</text>
+  <rect class="box" x="30" y="342" width="250" height="96" rx="8"/>
+  <text class="label" x="155" y="382">Show computer</text><text class="sub" x="155" y="414">Keeps audio running</text>
+  <rect class="box" x="360" y="342" width="250" height="96" rx="8"/>
+  <text class="label" x="485" y="382">Hardware node</text><text class="sub" x="485" y="414">Optional audio bridge</text>
+  <rect class="box" x="360" y="498" width="250" height="72" rx="8"/>
+  <text class="sub" x="485" y="528">Physical inputs</text><text class="sub" x="485" y="555">and outputs</text>
+  <text class="sub" x="155" y="525">No audio interface</text><text class="sub" x="155" y="553">needed for Talk</text>
+</svg>
