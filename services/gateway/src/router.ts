@@ -1,7 +1,7 @@
 import { connect, type Socket } from "node:net";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
-import type { Channel, Pack } from "@comms/protocol";
+import type { Channel, Pack, Port, Crosspoint, PortLiveState } from "@comms/protocol";
 
 export interface RouterPackState {
   packId: string;
@@ -19,8 +19,9 @@ export type RouterEvent =
   | { event: "connected"; sessionId: string; packId: string }
   | { event: "closed"; sessionId: string; packId: string; reason: string }
   | ({ event: "packState" } & RouterPackState)
+  | ({ event: "portState" } & Omit<PortLiveState, "connected" | "lastCaller"> & { lastCaller?: string | null })
   | { event: "levels"; levels: Record<string, number> }
-  | { event: "stats"; tickAvgUs: number; tickMaxUs: number; peers: number };
+  | { event: "stats"; tickAvgUs: number; tickMaxUs: number; peers: number; queues?: unknown };
 
 /**
  * The gateway's link to mix-router: line-delimited JSON over a local TCP connection.
@@ -123,6 +124,12 @@ export class MixRouter extends EventEmitter {
         keys: keys.map(({ channelId, volume }) => ({ channelId, volume })),
       })),
     });
+    this.lastConfig = line;
+    if (this.ready) this.write(line);
+  }
+
+  configurePorts(ports: Port[], crosspoints: Crosspoint[]): void {
+    const line = JSON.stringify({ cmd: "configPorts", ports, crosspoints });
     this.lastConfig = line;
     if (this.ready) this.write(line);
   }

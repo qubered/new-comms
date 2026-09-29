@@ -1,394 +1,189 @@
-import { randomUUID } from "node:crypto";
-import { EventEmitter } from "node:events";
-import type {
-  Channel,
-  ChannelType,
-  HardwareDevice,
-  ChannelWrite,
-  NodeRegistration,
-  PackWrite,
-  Pack,
-  PackKey,
-  PackLiveState,
-  PublicPack,
-  ServerEvent,
-  Snapshot,
-} from "@comms/protocol";
-import { MAX_BUTTONS } from "@comms/protocol";
-import { HttpError } from "./errors.ts";
-import { MixRouter, type RouterEvent } from "./router.ts";
-import { validate } from "./validate.ts";
-import { Store, clamp, normaliseKey, reconcile } from "./store.ts";
-
+import { randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
+import { checkPorts, expand, functionTarget, type Port, type PortWrite, type PortLiveState, type Show, type ShowSnapshot, type ShowEvent, type Node, type NodeWrite, type V2NodeRegistration } from '@comms/protocol';
+import { HttpError } from './errors.ts';
+import { MixRouter, type RouterEvent } from './router.ts';
+import { validate } from './validate.ts';
+import { Store } from './store.ts';
 export { HttpError };
+const emptyLive = (p: Port): PortLiveState => ({ portId: p.id, connected: false, micOff: false, keys: {}, voxOpen: false, incoming: [], audible: [], volumes: p.station?.volumes ?? {}, masterVolume: p.station?.masterVolume ?? 100 });
 
-const emptyLive = (packId: string, masterVolume = 80): PackLiveState => ({
-  packId,
-  connected: false,
-  micOff: false,
-  keyed: {},
-  volumes: {},
-  masterVolume,
-});
-
-/** All durable and live state, plus the fan-out to SSE clients. */
 export class Gateway extends EventEmitter {
   rev = 1;
-  live = new Map<string, PackLiveState>();
+  live = new Map<string, PortLiveState>();
   levels: Record<string, number> = {};
-  /** Latest mixer health from mix-router: time per 10 ms cycle, in microseconds. */
-  mixerStats?: { tickAvgUs: number; tickMaxUs: number; peers: number };
-  /** session id -> pack id */
+  mixerStats?: { tickAvgUs: number; tickMaxUs: number; peers: number; queues?: unknown };
   sessions = new Map<string, string>();
-
-  constructor(
-    readonly store: Store,
-    readonly router: MixRouter,
-    readonly name = "Comms",
-  ) {
+  constructor(readonly store: Store, readonly router: MixRouter, readonly name?: string) {
     super();
-    router.on("event", (event: RouterEvent) => this.onRouter(event));
-    router.on("exit", () => this.allOffline());
+    router.on('event', (event: RouterEvent) => this.onRouter(event));
+    router.on('exit', () => this.allOffline());
     this.pushConfig();
   }
-
-  get channels(): Channel[] {
-    return this.store.config.channels;
+  get ports() { return this.store.config.ports; }
+  get nodes() { return this.store.config.nodes; }
+  publicPort(p: Port): Port {
+    const result = structuredClone(p);
+    result.hasPin = !!result.station?.pin;
+    if (result.station) delete result.station.pin;
+    return result;
   }
-  get packs(): Pack[] {
-    return this.store.config.packs;
+  snapshot(): ShowSnapshot {
+    return { rev: this.rev, name: this.name ?? this.store.config.name, ports: this.ports.map(p => this.publicPort(p)), nodes: this.nodes,
+      crosspoints: expand(this.ports), live: Object.fromEntries(this.ports.map(p => [p.id, this.live.get(p.id) ?? emptyLive(p)])) };
   }
-
-  publicPack = (pack: Pack): PublicPack => {
-    const { pin, ...rest } = pack;
-    return { ...rest, hasPin: Boolean(pin) };
-  };
-
-  snapshot(): Snapshot {
-    return {
-      rev: this.rev,
-      name: this.name,
-      channels: this.channels,
-      packs: this.packs.map(this.publicPack),
-      live: Object.fromEntries(
-        this.packs.map((pack) => [pack.id, this.live.get(pack.id) ?? emptyLive(pack.id, pack.masterVolume)]),
-      ),
-    };
-  }
-
-  private broadcast(event: ServerEvent): void {
-    this.emit("event", event);
-  }
-
-  private pushConfig(): void {
-    reconcile(this.store.config);
+  private broadcast(event: ShowEvent) { this.emit('event', event); }
+  private pushConfig() {
     this.store.save();
-    for (const id of [...this.live.keys()]) {
-      if (!this.packs.some((pack) => pack.id === id)) this.live.delete(id);
+    for (const id of this.live.keys()) if (!this.ports.some(p => p.id === id)) this.live.delete(id);
+    const crosspoints = expand(this.ports);
+    this.router.configurePorts(this.ports, crosspoints);
+    this.broadcast({ type: 'config', rev: ++this.rev, ports: this.ports.map(p => this.publicPort(p)), nodes: this.nodes, crosspoints });
+  }
+  private commit(next: Show) {
+    validate<Show>('Show', next);
+    const errors = checkPorts(next.ports).filter(i => i.severity === 'error');
+    if (errors.length) throw new HttpError(409, errors.map(i => `${next.ports.find(p => p.id === i.portId)?.label}: ${i.message}`).join(' '));
+    const nodeIds = new Set(next.nodes.map(n => n.id));
+    if (nodeIds.size !== next.nodes.length) throw new HttpError(409, 'Node IDs must be unique.');
+    const circuits = new Set<string>();
+    for (const p of next.ports) if (p.hardware) {
+      const node = next.nodes.find(n => n.id === p.hardware!.nodeId);
+      const channel = node?.[p.type === 'input' ? 'inputs' : 'outputs'].find(c => c.channel === p.hardware!.channel && c.inUse);
+      const circuit = `${p.hardware.nodeId}:${p.type}:${p.hardware.channel}`;
+      if (!channel || circuits.has(circuit)) throw new HttpError(409, 'Each I/O port needs a unique channel in use on a registered node.');
+      circuits.add(circuit);
     }
-    this.router.configure(this.channels, this.packs);
-    this.rev += 1;
-    this.broadcast({ type: "config", rev: this.rev, channels: this.channels, packs: this.packs.map(this.publicPack) });
+    this.store.config = next;
+    this.pushConfig();
   }
-
-  private setLive(next: PackLiveState): void {
-    this.live.set(next.packId, next);
-    this.rev += 1;
-    this.broadcast({ type: "live", rev: this.rev, packId: next.packId, live: next });
+  replaceShow(raw: unknown) { const next = validate<Show>('Show', raw); this.commit(structuredClone(next)); return this.snapshot(); }
+  private findPort(id: string) { const p = this.ports.find(p => p.id === id); if (!p) throw new HttpError(404, 'No such port.'); return p; }
+  private setLive(id: string, patch: Partial<PortLiveState>) {
+    const p = this.ports.find(p => p.id === id); if (!p) return;
+    const next = { ...(this.live.get(id) ?? emptyLive(p)), ...patch };
+    this.live.set(id, next);
+    this.broadcast({ type: 'live', rev: ++this.rev, portId: id, live: next });
   }
-
-  private patchLive(packId: string, patch: Partial<PackLiveState>): void {
-    const pack = this.packs.find((p) => p.id === packId);
-    if (!pack) return;
-    const current = this.live.get(packId) ?? emptyLive(packId, pack.masterVolume);
-    this.setLive({ ...current, ...patch });
+  private sessionPorts(id: string) { return this.ports.filter(p => p.id === id || p.hardware?.nodeId === id); }
+  private allOffline() {
+    for (const p of this.ports) this.setLive(p.id, { connected: false, keys: {}, voxOpen: false, incoming: [], audible: [], client: undefined });
+    this.sessions.clear(); this.levels = {}; this.mixerStats = undefined;
+    this.broadcast({ type: 'levels', levels: {}, vox: {} });
   }
-
-  private allOffline(): void {
-    for (const pack of this.packs) {
-      const current = this.live.get(pack.id);
-      if (current?.connected) this.setLive({ ...current, connected: false, keyed: {}, client: undefined });
-    }
-    this.sessions.clear();
-    this.mixerStats = undefined;
-  }
-
-  private onRouter(event: RouterEvent): void {
+  private onRouter(event: RouterEvent) {
     switch (event.event) {
-      case "sync": {
-        // The router kept running while we were away: rebuild who is connected.
+      case 'sync':
         this.sessions.clear();
-        for (const { sessionId, packId } of event.sessions) {
-          this.sessions.set(sessionId, packId);
-          this.patchLive(packId, { connected: true });
-        }
+        for (const session of event.sessions) this.sessions.set(session.sessionId, session.packId);
+        for (const p of this.ports) this.setLive(p.id, { connected: [...this.sessions.values()].includes(p.hardware?.nodeId ?? p.id) });
         break;
-      }
-      case "connected":
-        this.patchLive(event.packId, { connected: true });
+      case 'connected':
+        this.sessions.set(event.sessionId, event.packId);
+        for (const p of this.sessionPorts(event.packId)) this.setLive(p.id, { connected: true });
         break;
-      case "closed": {
+      case 'closed':
         this.sessions.delete(event.sessionId);
-        // A newer session may already own the pack; only clear if none remains.
-        const stillHeld = [...this.sessions.values()].includes(event.packId);
-        if (!stillHeld) {
-          this.patchLive(event.packId, { connected: false, keyed: {}, client: undefined });
-          const node = this.packs.find((p) => p.id === event.packId)?.device;
-          if (node) {
-            node.lastSeen = Date.now();
-            this.pushConfig();
-          }
-        }
+        if (![...this.sessions.values()].includes(event.packId)) for (const p of this.sessionPorts(event.packId)) this.setLive(p.id, { connected: false, keys: {}, voxOpen: false, incoming: [], audible: [], client: undefined });
+        break;
+      case 'portState': {
+        const p = this.ports.find(p => p.id === event.portId); if (!p) break;
+        if (p.station) { p.station.masterVolume = event.masterVolume; p.station.volumes = event.volumes; this.store.save(); }
+        const { event: _event, lastCaller, ...state } = event;
+        this.setLive(p.id, { ...state, lastCaller: lastCaller ?? undefined });
         break;
       }
-      case "packState": {
-        const pack = this.packs.find((p) => p.id === event.packId);
-        if (!pack) break;
-        // Volumes are persisted per pack; they ride the live state, not a config event.
-        pack.masterVolume = event.masterVolume;
-        for (const key of pack.keys) key.volume = event.volumes[key.channelId] ?? key.volume;
-        this.store.save();
-        this.patchLive(event.packId, {
-          micOff: event.micOff,
-          keyed: event.keyed,
-          volumes: event.volumes,
-          masterVolume: event.masterVolume,
-        });
-        break;
-      }
-      case "stats":
-        this.mixerStats = { tickAvgUs: event.tickAvgUs, tickMaxUs: event.tickMaxUs, peers: event.peers };
-        break;
-      case "levels":
+      case 'levels':
         this.levels = event.levels;
-        this.broadcast({ type: "levels", levels: event.levels });
+        this.broadcast({ type: 'levels', levels: event.levels, vox: Object.fromEntries([...this.live].map(([id, s]) => [id, s.voxOpen])) });
         break;
-      default:
+      case 'stats': this.mixerStats = event; break;
     }
   }
-
-  // ---- media ----
-
-  async openSession(packId: string, offer: string, pin: string | undefined, candidateIp: string, client: string) {
-    const pack = this.packs.find((p) => p.id === packId);
-    if (!pack) throw new HttpError(404, "no such pack");
-    if (pack.type === "hardware" && !pack.device) throw new HttpError(409, "hardware pack has no node");
-    if (pack.pin && pack.pin !== pin) throw new HttpError(403, "wrong PIN");
-    const sessionId = randomUUID();
-    this.sessions.set(sessionId, packId);
+  createPort(raw: unknown) {
+    const body = validate<PortWrite>('PortWrite', raw);
+    if (body.type === 'input' || body.type === 'output') throw new HttpError(409, 'I/O ports come from channels in use on a node.');
+    const p: Port = { ...body, id: randomUUID(), label: body.label || body.name,
+      ...(body.type === 'station' ? { station: body.station ?? { masterVolume: 80, volumes: {}, replyMode: 'ptt' } } : {}) };
+    const next = structuredClone(this.store.config); next.ports.push(p); this.commit(next); return this.publicPort(p);
+  }
+  updatePort(id: string, raw: unknown) {
+    const body = validate<PortWrite>('PortWrite', raw); const old = this.findPort(id);
+    if (old.type !== body.type) throw new HttpError(409, 'Create a new port to change its type.');
+    const p: Port = { ...body, id, label: body.label || body.name };
+    // Hardware identity is owned by registration; labels, trims and functions remain editable.
+    if (old.hardware && (p.hardware?.nodeId !== old.hardware.nodeId || p.hardware?.channel !== old.hardware.channel)) throw new HttpError(409, 'A hardware port cannot move to another channel.');
+    const next = structuredClone(this.store.config);
+    if (p.hardware) {
+      const channel = next.nodes.find(n => n.id === p.hardware!.nodeId)![p.type === 'input' ? 'inputs' : 'outputs'].find(c => c.channel === p.hardware!.channel)!;
+      channel.trim = p.hardware.trim; channel.shortName = p.hardware.shortName;
+    }
+    // Public snapshots omit the PIN. An omitted PIN keeps it; an empty station PIN is not accepted by the schema.
+    if (old.station?.pin && p.station && !('pin' in p.station)) p.station.pin = old.station.pin;
+    next.ports = next.ports.map(q => q.id === id ? p : q); this.commit(next); return this.publicPort(p);
+  }
+  deletePort(id: string) {
+    const p = this.findPort(id);
+    if (p.hardware) throw new HttpError(409, 'Untick the channel in I/O nodes to remove this port.');
+    const next = structuredClone(this.store.config); next.ports = next.ports.filter(p => p.id !== id);
+    this.commit(next); // Refuse dangling routes; tell the user which owners need editing.
+    for (const [session, owner] of this.sessions) if (owner === id) this.router.close(session);
+  }
+  clearPin(id: string) {
+    this.findPort(id);
+    const next = structuredClone(this.store.config);
+    const station = next.ports.find(p => p.id === id)?.station;
+    if (station) delete station.pin;
+    this.commit(next);
+  }
+  verifyPin(id: string, pin: unknown) { const p = this.findPort(id); if (p.station?.pin && p.station.pin !== pin) throw new HttpError(403, 'Wrong PIN.'); }
+  async openSession(id: string, offer: string, pin: string | undefined, candidateIp: string, client: string) {
+    const station = this.ports.find(p => p.id === id && p.type === 'station'); const node = this.nodes.find(n => n.id === id);
+    if (!station && !node) throw new HttpError(404, 'No such station or node.');
+    if (station) this.verifyPin(id, pin);
+    if (node && !this.sessionPorts(id).length) throw new HttpError(409, 'Select at least one channel in use on this node.');
+    const sessionId = randomUUID(); this.sessions.set(sessionId, id);
     try {
-      const answer = await this.router.open(sessionId, packId, offer, candidateIp);
-      this.patchLive(packId, { client });
+      const answer = await this.router.open(sessionId, id, offer, candidateIp);
+      for (const p of this.sessionPorts(id)) this.setLive(p.id, { client });
       return { sessionId, answer };
-    } catch (error) {
-      this.sessions.delete(sessionId);
-      throw new HttpError(502, (error as Error).message);
+    } catch (e) { this.sessions.delete(sessionId); throw new HttpError(502, (e as Error).message); }
+  }
+  closeSession(id: string) { if (this.sessions.has(id)) this.router.close(id); }
+  registerNode(raw: unknown) {
+    const body = validate<V2NodeRegistration>('V2NodeRegistration', raw); const next = structuredClone(this.store.config);
+    const old = next.nodes.find(n => n.id === body.nodeId);
+    const channels = (dir: 'inputs' | 'outputs') => body[dir].map((name, i) => ({ channel: i + 1, inUse: false, trim: 0, ...old?.[dir].find(c => c.channel === i + 1), name }));
+    const node: Node = { id: body.nodeId, name: body.name, address: body.address, lastSeen: Date.now(), inputs: channels('inputs'), outputs: channels('outputs') };
+    next.nodes = [...next.nodes.filter(n => n.id !== node.id), node];
+    this.reconcileNode(next, node); this.commit(next);
+    return { nodeId: node.id, ports: next.ports.filter(p => p.hardware?.nodeId === node.id) };
+  }
+  updateNode(id: string, raw: unknown) {
+    const body = validate<NodeWrite>('NodeWrite', raw); const next = structuredClone(this.store.config); const node = next.nodes.find(n => n.id === id);
+    if (!node) throw new HttpError(404, 'No such node.');
+    for (const dir of ['inputs', 'outputs'] as const) {
+      if (body[dir].length !== node[dir].length || new Set(body[dir].map(c => c.channel)).size !== body[dir].length || body[dir].some(c => !node[dir].some(old => old.channel === c.channel))) throw new HttpError(409, 'Only registered hardware channels can be selected.');
+      node[dir] = body[dir];
     }
+    node.name = body.name; this.reconcileNode(next, node); this.commit(next); return node;
   }
-
-  closeSession(sessionId: string): void {
-    if (this.sessions.has(sessionId)) this.router.close(sessionId);
-  }
-
-  // ---- config CRUD ----
-
-  private findPack(id: string): Pack {
-    const pack = this.packs.find((p) => p.id === id);
-    if (!pack) throw new HttpError(404, "no such pack");
-    return pack;
-  }
-  private findChannel(id: string): Channel {
-    const channel = this.channels.find((c) => c.id === id);
-    if (!channel) throw new HttpError(404, "no such channel");
-    return channel;
-  }
-
-  private keysFrom(raw: unknown): PackKey[] {
-    if (!Array.isArray(raw)) throw new HttpError(400, "keys must be an array");
-    return raw.map((item) => {
-      const key = item as Partial<PackKey> & { channelId?: string };
-      if (!key.channelId) throw new HttpError(400, "each key needs a channelId");
-      return normaliseKey(key as Partial<PackKey> & { channelId: string }, this.channels.find((c) => c.id === key.channelId));
-    });
-  }
-
-  /** A person's phone has room for this many buttons (partyline and direct keys). */
-  static readonly MAX_BUTTONS = MAX_BUTTONS;
-
-  /** Buttons are keys on talkable channels. PGM mappings are not buttons: they have no key and no level. */
-  private buttons(keys: PackKey[], channels = this.channels): number {
-    return keys.filter((key) => channels.find((c) => c.id === key.channelId)?.type !== "pgm").length;
-  }
-
-  /** Hardware nodes may sit on any number of channels; people are limited to six buttons. */
-  private assertButtons(pack: { type: string; name: string }, keys: PackKey[], channels = this.channels): void {
-    if (pack.type === "human" && this.buttons(keys, channels) > MAX_BUTTONS) {
-      throw new HttpError(409, `${pack.name || "A pack"} can have at most ${MAX_BUTTONS} buttons. PGM channels do not count.`);
+  private reconcileNode(next: Show, node: Node) {
+    const retained = new Set<string>();
+    for (const [dir, type] of [['inputs', 'input'], ['outputs', 'output']] as const) for (const channel of node[dir]) {
+      if (!channel.inUse) continue;
+      const p = next.ports.find(p => p.type === type && p.hardware?.nodeId === node.id && p.hardware.channel === channel.channel);
+      if (p) { p.hardware!.trim = channel.trim; p.hardware!.shortName = channel.shortName; if (channel.shortName) p.label = channel.shortName; retained.add(p.id); }
+      else {
+        const id = randomUUID(); retained.add(id);
+        next.ports.push({ id, name: `${node.name} ${type === 'input' ? 'in' : 'out'} ${String(channel.channel).padStart(2, '0')}`, label: channel.shortName || `${node.name} ${type === 'input' ? 'in' : 'out'} ${channel.channel}`, type, hardware: { nodeId: node.id, channel: channel.channel, trim: channel.trim, shortName: channel.shortName }, triggers: [] });
+      }
     }
-  }
-
-  private checkPin(pin: unknown): string | undefined {
-    if (pin === undefined || pin === null || pin === "") return undefined;
-    if (typeof pin !== "string" || !/^\d{4}$/.test(pin)) throw new HttpError(400, "PIN must be four digits");
-    return pin;
-  }
-
-  verifyPin(id: string, pin: unknown): void {
-    const pack = this.findPack(id);
-    if (pack.pin && pack.pin !== pin) throw new HttpError(403, "wrong PIN");
-  }
-
-  createPack(raw: unknown): Pack {
-    const body = validate<PackWrite>("PackWrite", raw);
-    const name = String(body.name ?? "").trim();
-    if (!name) throw new HttpError(400, "name is required");
-    const pack: Pack = {
-      id: randomUUID(),
-      name,
-      type: body.type === "hardware" ? "hardware" : "human",
-      masterVolume: clamp(Number(body.masterVolume ?? 80)),
-      keys: body.keys ? this.keysFrom(body.keys) : [],
-    };
-    this.assertButtons(pack, pack.keys);
-    const pin = this.checkPin(body.pin);
-    if (pin && pack.type === "human") pack.pin = pin;
-    this.packs.push(pack);
-    this.pushConfig();
-    return pack;
-  }
-
-  updatePack(id: string, raw: unknown): Pack {
-    const body = validate<PackWrite>("PackWrite", raw);
-    const pack = this.findPack(id);
-    if (typeof body.name === "string") {
-      if (!body.name.trim()) throw new HttpError(400, "name is required");
-      pack.name = body.name.trim();
+    const removed = next.ports.filter(p => p.hardware?.nodeId === node.id && !retained.has(p.id)).map(p => p.id);
+    for (const id of removed) {
+      const used = next.ports.some(p => p.id !== id && (p.group?.members.includes(id) || p.ifb?.program === id || p.ifb?.destination === id || p.triggers.some(t => t.functions.some(f => functionTarget(f) === id || f.fn === 'routeAudio' && f.from === id))));
+      if (used) throw new HttpError(409, 'This channel is routed. Remove its incoming routes before turning it off.');
     }
-    if (body.type !== undefined && body.type !== pack.type) {
-      if (pack.device) throw new HttpError(409, "This pack belongs to a registered node; remove the node to change its type");
-      if (body.type === "human") this.assertButtons({ type: "human", name: pack.name }, pack.keys);
-      if (body.type === "hardware") delete pack.pin;
-      pack.type = body.type;
-    }
-    if (body.masterVolume !== undefined) pack.masterVolume = clamp(Number(body.masterVolume));
-    if ("pin" in body && pack.type === "human") {
-      const pin = this.checkPin(body.pin);
-      if (pin) pack.pin = pin;
-      else delete pack.pin;
-    }
-    if (body.keys !== undefined) {
-      const keys = this.keysFrom(body.keys);
-      this.assertButtons(pack, keys);
-      pack.keys = keys;
-    }
-    if (pack.device && body.device && typeof body.device === "object") {
-      const { input, output, inputTrim, outputTrim } = body.device as Partial<HardwareDevice>;
-      if (input !== undefined) pack.device.input = input;
-      if (output !== undefined) pack.device.output = output;
-      if (inputTrim !== undefined) pack.device.inputTrim = inputTrim;
-      if (outputTrim !== undefined) pack.device.outputTrim = outputTrim;
-    }
-    this.pushConfig();
-    return pack;
-  }
-
-  deletePack(id: string): void {
-    this.findPack(id);
-    this.store.config.packs = this.packs.filter((p) => p.id !== id);
-    this.live.delete(id);
-    for (const [session, pack] of this.sessions) if (pack === id) this.router.close(session);
-    this.pushConfig();
-  }
-
-  createChannel(raw: unknown): Channel {
-    const body = validate<ChannelWrite>("ChannelWrite", raw);
-    const name = String(body.name ?? "").trim();
-    if (!name) throw new HttpError(400, "name is required");
-    const channel: Channel = {
-      id: randomUUID(),
-      name,
-      type: this.channelType(body.type),
-      members: [],
-    };
-    if (typeof body.subText === "string" && body.subText) channel.subText = body.subText;
-    this.channels.push(channel);
-    if (Array.isArray(body.members)) this.setMembers(channel, body.members.map(String));
-    this.pushConfig();
-    return channel;
-  }
-
-  private channelType(value: unknown): ChannelType {
-    return value === "direct" || value === "pgm" ? value : "partyline";
-  }
-
-  /** Editing "who's on it" adds or removes a key on each affected pack. */
-  private setMembers(channel: Channel, members: string[]): void {
-    // Check everyone first so a refusal leaves nothing half-changed.
-    for (const pack of this.packs) {
-      const adding = members.includes(pack.id) && !pack.keys.some((key) => key.channelId === channel.id);
-      if (adding) this.assertButtons(pack, [...pack.keys, normaliseKey({ channelId: channel.id }, channel)]);
-    }
-    for (const pack of this.packs) {
-      const has = pack.keys.some((key) => key.channelId === channel.id);
-      const want = members.includes(pack.id);
-      if (want && !has) pack.keys.push(normaliseKey({ channelId: channel.id }, channel));
-      if (!want && has) pack.keys = pack.keys.filter((key) => key.channelId !== channel.id);
-    }
-  }
-
-  updateChannel(id: string, raw: unknown): Channel {
-    const body = validate<ChannelWrite>("ChannelWrite", raw);
-    const channel = this.findChannel(id);
-    if (typeof body.name === "string") {
-      if (!body.name.trim()) throw new HttpError(400, "name is required");
-      channel.name = body.name.trim();
-    }
-    if ("subText" in body) {
-      if (typeof body.subText === "string" && body.subText) channel.subText = body.subText;
-      else delete channel.subText;
-    }
-    if (body.type !== undefined && this.channelType(body.type) !== channel.type) {
-      // Turning a PGM into a talkable channel turns every mapping into a button: make sure they fit.
-      const next = this.channels.map((c) => (c.id === channel.id ? { ...c, type: this.channelType(body.type) } : c));
-      for (const pack of this.packs) if (pack.keys.some((key) => key.channelId === channel.id)) this.assertButtons(pack, pack.keys, next);
-      channel.type = this.channelType(body.type);
-    }
-    if (Array.isArray(body.members)) this.setMembers(channel, body.members.map(String));
-    this.pushConfig();
-    return channel;
-  }
-
-  deleteChannel(id: string): void {
-    this.findChannel(id);
-    this.store.config.channels = this.channels.filter((c) => c.id !== id);
-    this.pushConfig();
-  }
-
-  // ---- hardware nodes ----
-
-  registerNode(raw: unknown): Pack {
-    const body = validate<NodeRegistration>("NodeRegistration", raw);
-    const { deviceName, availableInputs = [], availableOutputs = [], address } = body;
-    if (!deviceName) throw new HttpError(400, "deviceName is required");
-    let pack = this.packs.find((p) => p.type === "hardware" && p.device?.name === deviceName);
-    // A hardware pack made ahead of time in the Manager is claimed by the node with the same name.
-    pack ??= this.packs.find((p) => p.type === "hardware" && !p.device && p.name.toLowerCase() === deviceName.toLowerCase());
-    const now = Date.now();
-    if (!pack) {
-      pack = { id: randomUUID(), name: deviceName, type: "hardware", masterVolume: 100, keys: [] };
-      this.packs.push(pack);
-    }
-    const previous = pack.device;
-    pack.device = {
-      name: deviceName,
-      address,
-      inputs: availableInputs,
-      outputs: availableOutputs,
-      input: previous?.input ?? availableInputs[0],
-      output: previous?.output ?? availableOutputs[0],
-      lastSeen: now,
-    };
-    this.pushConfig();
-    return pack;
+    next.ports = next.ports.filter(p => !removed.includes(p.id));
   }
 }

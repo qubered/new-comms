@@ -176,6 +176,44 @@ export type PortPeerMessage =
   | MasterVolumeMessage1
   | LoopbackMessage1
   | PingMessage1;
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "ShowEvent".
+ */
+export type ShowEvent =
+  | {
+      type: "snapshot";
+      rev: number;
+      name: string;
+      ports: Port[];
+      nodes: Node[];
+      crosspoints: Crosspoint[];
+      live: {
+        [k: string]: PortLiveState;
+      };
+    }
+  | {
+      type: "config";
+      rev: number;
+      ports: Port[];
+      nodes: Node[];
+      crosspoints: Crosspoint[];
+    }
+  | {
+      type: "live";
+      rev: number;
+      portId: string;
+      live: PortLiveState;
+    }
+  | {
+      type: "levels";
+      levels: {
+        [k: string]: number;
+      };
+      vox: {
+        [k: string]: boolean;
+      };
+    };
 
 /**
  * Authoritative contracts for gateway, Talk, Manager and comms-node. TypeScript types are generated from this file (npm run generate -w @comms/protocol).
@@ -520,6 +558,7 @@ export interface Port {
     dim: number | null;
   };
   triggers: Trigger[];
+  hasPin?: boolean;
 }
 /**
  * This interface was referenced by `Protocol`'s JSON-Schema
@@ -673,4 +712,22 @@ export interface NodeWrite {
   name: string;
   inputs: NodeChannel[];
   outputs: NodeChannel[];
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "V2NodeRegistration".
+ */
+export interface V2NodeRegistration {
+  nodeId: string;
+  name: string;
+  address: string;
+  inputs: string[];
+  outputs: string[];
+}
+/**
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "PinCheck".
+ */
+export interface PinCheck {
+  pin?: string;
 }

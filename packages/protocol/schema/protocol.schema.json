@@ -1344,6 +1344,9 @@
           "items": {
             "$ref": "#/$defs/Trigger"
           }
+        },
+        "hasPin": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1920,6 +1923,200 @@
         "name",
         "inputs",
         "outputs"
+      ]
+    },
+    "V2NodeRegistration": {
+      "title": "V2NodeRegistration",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "nodeId",
+        "name",
+        "address",
+        "inputs",
+        "outputs"
+      ]
+    },
+    "PinCheck": {
+      "title": "PinCheck",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pin": {
+          "type": "string"
+        }
+      },
+      "required": []
+    },
+    "ShowEvent": {
+      "title": "ShowEvent",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "snapshot"
+            },
+            "rev": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ports": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Port"
+              }
+            },
+            "nodes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Node"
+              }
+            },
+            "crosspoints": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Crosspoint"
+              }
+            },
+            "live": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/PortLiveState"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "rev",
+            "name",
+            "ports",
+            "nodes",
+            "crosspoints",
+            "live"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "config"
+            },
+            "rev": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ports": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Port"
+              }
+            },
+            "nodes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Node"
+              }
+            },
+            "crosspoints": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Crosspoint"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "rev",
+            "ports",
+            "nodes",
+            "crosspoints"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "live"
+            },
+            "rev": {
+              "type": "integer"
+            },
+            "portId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "live": {
+              "$ref": "#/$defs/PortLiveState"
+            }
+          },
+          "required": [
+            "type",
+            "rev",
+            "portId",
+            "live"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "levels"
+            },
+            "levels": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "vox": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "boolean"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "levels",
+            "vox"
+          ]
+        }
       ]
     }
   }
