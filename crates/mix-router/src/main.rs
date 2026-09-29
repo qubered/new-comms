@@ -67,7 +67,9 @@ impl Sockets {
 const DSCP_EF_TOS: u32 = 46 << 2;
 
 fn bind_media_socket(ip: IpAddr) -> io::Result<UdpSocket> {
-    let address = SocketAddr::new(ip, 0);
+    // MIX_ROUTER_PORT pins the media port so a venue firewall can allow it; 0 picks a free one.
+    let port = std::env::var("MIX_ROUTER_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(0);
+    let address = SocketAddr::new(ip, port);
     let socket = Socket::new(Domain::for_address(address), Type::DGRAM, Some(Protocol::UDP))?;
     if ip.is_ipv4() {
         let _ = socket.set_tos_v4(DSCP_EF_TOS);

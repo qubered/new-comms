@@ -4,7 +4,9 @@ import basicSsl from "@vitejs/plugin-basic-ssl";
 
 // Phones only allow the microphone on https (or localhost), so dev is https with a
 // self-signed certificate. Accept the browser warning once per phone.
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Production is served by the gateway under /manager/.
+  base: command === "build" ? "/manager/" : "/",
   plugins: [react(), ...(process.env.COMMS_HTTP ? [] : [basicSsl()])],
   server: {
     host: true,
@@ -12,4 +14,4 @@ export default defineConfig({
     strictPort: true,
     proxy: { "/api": { target: "http://localhost:8080", changeOrigin: false } },
   },
-});
+}));

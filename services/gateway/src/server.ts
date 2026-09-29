@@ -44,8 +44,13 @@ export function describeClient(userAgent = ""): string {
   return `${device}, ${browser}`;
 }
 
-export function buildServer(gateway: Gateway, options: { mediaIp?: string; logger?: boolean | { level: string } } = {}): FastifyInstance {
-  const app = Fastify({ logger: options.logger ?? false, bodyLimit: 1_000_000 });
+export function buildServer(
+  gateway: Gateway,
+  options: { mediaIp?: string; logger?: boolean | { level: string }; https?: { key: Buffer; cert: Buffer } } = {},
+): FastifyInstance {
+  const app = (options.https
+    ? Fastify({ logger: options.logger ?? false, bodyLimit: 1_000_000, https: options.https })
+    : Fastify({ logger: options.logger ?? false, bodyLimit: 1_000_000 })) as unknown as FastifyInstance;
 
   app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply) => {
     if (error instanceof HttpError) return reply.code(error.status).send({ error: error.message });

@@ -29,7 +29,7 @@ struct Client {
     tone: bool,
     sent: u64,
     phase: f32,
-    heard: Vec<f32>, // rms per received packet
+    heard: Vec<(Instant, f32)>, // arrival time and rms per received packet
     connected: bool,
     pending_msgs: Vec<String>,
 }
@@ -77,7 +77,7 @@ impl Client {
                     let mut pcm = vec![0f32; 5760];
                     if let Ok(count) = self.decoder.decode_float(&d.data, &mut pcm, false) {
                         let rms = (pcm[..count].iter().map(|s| s * s).sum::<f32>() / count as f32).sqrt();
-                        self.heard.push(rms);
+                        self.heard.push((Instant::now(), rms));
                     }
                 }
                 Output::Event(_) => {}
@@ -116,7 +116,7 @@ impl Client {
 
     fn mean_recent(&self, packets: usize) -> f32 {
         let tail = &self.heard[self.heard.len().saturating_sub(packets)..];
-        if tail.is_empty() { 0.0 } else { tail.iter().sum::<f32>() / tail.len() as f32 }
+        if tail.is_empty() { 0.0 } else { tail.iter().map(|(_, r)| r).sum::<f32>() / tail.len() as f32 }
     }
 }
 
@@ -197,6 +197,37 @@ fn main() {
             measured = (clients[0].mean_recent(100), clients[1].mean_recent(100), clients[2].mean_recent(100));
         }
         std::thread::sleep(Duration::from_millis(1));
+    }
+    // Impulse latency: tone starts on a, first loud packet at b. Loopback, so this is the
+    // mixer's own floor (packetisation + prime buffer + tick + codec), not mic-to-ear.
+    let mut latencies = Vec::new();
+    if measured.1 > 0.1 {
+        for _ in 0..20 {
+            clients[0].tone = false;
+            let quiet = Instant::now() + Duration::from_millis(250);
+            while Instant::now() < quiet {
+                let now = Instant::now();
+                for c in &mut clients { c.pump(now); }
+                if now >= next_audio { for c in &mut clients { c.send_audio(now); } next_audio += Duration::from_millis(10); }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let t0 = Instant::now();
+            clients[0].tone = true;
+            let until = t0 + Duration::from_millis(400);
+            while Instant::now() < until {
+                let now = Instant::now();
+                for c in &mut clients { c.pump(now); }
+                if now >= next_audio { for c in &mut clients { c.send_audio(now); } next_audio += Duration::from_millis(10); }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            if let Some((at, _)) = clients[1].heard.iter().find(|(at, rms)| *at >= t0 && *rms > 0.1) {
+                latencies.push(at.duration_since(t0).as_secs_f32() * 1000.0);
+            }
+        }
+        latencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        if let (Some(min), Some(max)) = (latencies.first(), latencies.last()) {
+            println!("impulse latency over loopback ({} trials): min {min:.0} ms, p50 {:.0} ms, max {max:.0} ms", latencies.len(), latencies[latencies.len() / 2]);
+        }
     }
     let _ = child.kill();
     let names: Vec<_> = clients.iter().map(|c| c.name).collect();
