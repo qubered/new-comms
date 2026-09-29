@@ -90,6 +90,8 @@ pub enum PeerMessage {
     MasterVolume { volume: f32 },
     #[serde(rename_all = "camelCase")]
     PgmListen { channel_id: String, on: bool },
+    /// Heartbeat: answered with `pong`; silence from a phone for a few seconds ends its session.
+    Ping,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]

@@ -83,7 +83,9 @@ export type PeerMessage =
   | { type: "micOff"; on: boolean }
   | { type: "volume"; channelId: string; volume: number }
   | { type: "masterVolume"; volume: number }
-  | { type: "pgmListen"; channelId: string; on: boolean };
+  | { type: "pgmListen"; channelId: string; on: boolean }
+  /** Heartbeat, once a second. The router answers `{ type: "pong" }`. */
+  | { type: "ping" };
 
 /** mix-router -> phone, on the same data channel. */
 export interface PeerState {

@@ -16,6 +16,9 @@ class FatalError extends Error {}
 
 const BACKOFF = [400, 800, 1500, 2500, 4000];
 const ICE_WAIT_MS = 1500;
+const PING_MS = 1000;
+/** No message from the router for this long means the link is dead, whatever ICE says. */
+const SILENCE_MS = 3500;
 
 /**
  * One phone's connection to the mix-router: a mic track up, a mixed track down, and a
@@ -170,7 +173,9 @@ export class Intercom {
         }
         void this.audio.play().catch(() => {});
       };
+      let lastRx = performance.now();
       channel.onmessage = (event) => {
+        lastRx = performance.now();
         try {
           const message = JSON.parse(String(event.data)) as PeerState;
           if (message.type === "state") {
@@ -184,6 +189,17 @@ export class Intercom {
       channel.onclose = () => {
         if (this.pc === pc) this.drop();
       };
+      // Heartbeat: quick detection of a dead router or a vanished WiFi path.
+      const heartbeat = setInterval(() => {
+        if (this.pc !== pc) return clearInterval(heartbeat);
+        if (channel.readyState !== "open") return;
+        if (performance.now() - lastRx > SILENCE_MS) {
+          clearInterval(heartbeat);
+          return this.drop();
+        }
+        channel.send('{"type":"ping"}');
+      }, PING_MS);
+      pc.addEventListener("connectionstatechange", () => pc.connectionState === "closed" && clearInterval(heartbeat));
       let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
       pc.onconnectionstatechange = () => {
         if (this.pc !== pc) return;

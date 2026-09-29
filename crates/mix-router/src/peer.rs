@@ -22,6 +22,8 @@ pub const SAMPLE_RATE: u32 = 48_000;
 pub const FRAME: usize = 480; // 10 ms
 const MAX_DECODE: usize = 5_760; // 120 ms
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+/// A phone that has opened its data channel pings every second; this much silence means it is gone.
+const DEAD_AFTER: Duration = Duration::from_secs(4);
 /// Start playing once this much is queued, and stop below one frame.
 const PRIME_SAMPLES: usize = FRAME * 2;
 /// Above this, the sender has bunched up; trim to `TRIM_TO` to bound latency.
@@ -50,6 +52,7 @@ pub struct Peer {
     rx: VecDeque<f32>,
     primed: bool,
     channel: Option<ChannelId>,
+    last_message: Instant,
     outbound: VecDeque<String>,
     pub connected: bool,
     closed: Option<&'static str>,
@@ -136,6 +139,7 @@ impl Peer {
                 rx: VecDeque::with_capacity(MAX_QUEUED * 2),
                 primed: false,
                 channel: None,
+                last_message: now,
                 outbound: VecDeque::new(),
                 connected: false,
                 closed: None,
@@ -187,6 +191,13 @@ impl Peer {
     pub fn handle_timeout(&mut self, now: Instant) {
         if !self.connected && now >= self.connect_deadline {
             self.close("connect-timeout");
+            return;
+        }
+        if self.connected
+            && self.channel.is_some()
+            && now.saturating_duration_since(self.last_message) > DEAD_AFTER
+        {
+            self.close("timeout");
             return;
         }
         if now >= self.next_timeout && self.rtc.handle_input(Input::Timeout(now)).is_err() {
@@ -283,12 +294,16 @@ impl Peer {
                     Event::MediaData(media) => self.decode(&media.data),
                     Event::ChannelOpen(id, _) => {
                         self.channel = Some(id);
+                        self.last_message = Instant::now();
                         self.flush_outbound();
                     }
                     Event::ChannelClose(_) => self.channel = None,
                     Event::ChannelData(data) if !data.binary => {
-                        if let Ok(message) = serde_json::from_slice::<PeerMessage>(&data.data) {
-                            events.push(PeerEvent::Message(message));
+                        self.last_message = Instant::now();
+                        match serde_json::from_slice::<PeerMessage>(&data.data) {
+                            Ok(PeerMessage::Ping) => self.send_json(r#"{"type":"pong"}"#.to_owned()),
+                            Ok(message) => events.push(PeerEvent::Message(message)),
+                            Err(_) => {}
                         }
                     }
                     _ => {}

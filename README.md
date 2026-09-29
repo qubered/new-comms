@@ -68,7 +68,7 @@ npm run smoke            # real mix-router, three WebRTC clients over loopback U
 ## Latency
 
 - **Mixer floor, measured** (`npm run smoke`, loopback): impulse in on one client, out of
-  another, p50 about 17 ms (min 13, max 23), including 10 ms Opus framing. Everything else
+  another, p50 about 20 ms (roughly 15 to 25 ms), including 10 ms Opus framing. Everything else
   is WiFi and the browser's audio stack.
 - **Mic-to-ear, still to measure on real phones** (target under 150 ms). Procedure: two
   phones in a quiet room, both on the same partyline, A keyed. Put both phones close to a
@@ -93,8 +93,10 @@ npm run smoke            # real mix-router, three WebRTC clients over loopback U
 
 ## Known limits
 
-- A vanished phone or node is noticed after a few seconds (ICE timeout), so its pack shows
-  online briefly. There is no application-level ping yet.
+- Phones ping the router once a second; either side gives up after 3.5 to 4 s of silence
+  (measured: killing the mixer is noticed on the phone in about 3.5 s, then it reconnects in
+  under a second). Hardware nodes have no data channel, so they still rely on ICE timeouts
+  (several seconds).
 - No packet-loss concealment; an underrun is silence. The mixer buffers about 20 ms per peer.
 - Someone heard on two channels you share is heard twice (the two contributions add).
 - iOS Safari: audio starts inside the tap that picks the pack, and the screen is kept awake

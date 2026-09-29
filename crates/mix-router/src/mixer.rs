@@ -120,6 +120,9 @@ impl Mixer {
 
     /// Applies a data-channel message. Returns the new state when something changed.
     pub fn apply(&mut self, id: &str, message: PeerMessage) -> Option<PackState> {
+        if matches!(message, PeerMessage::Ping) {
+            return None;
+        }
         let channels = &self.channels;
         let pack = self.packs.get_mut(id)?;
         if pack.config.kind == PackType::Hardware {
@@ -151,6 +154,7 @@ impl Mixer {
                 pack.volumes.insert(channel_id, volume.clamp(0.0, 100.0));
             }
             PeerMessage::MasterVolume { volume } => pack.master_volume = volume.clamp(0.0, 100.0),
+            PeerMessage::Ping => return None,
             PeerMessage::PgmListen { channel_id, on } => {
                 let toggle = key(&channel_id).is_some_and(|k| k.pgm_listen == PgmListen::Toggle);
                 if !toggle {

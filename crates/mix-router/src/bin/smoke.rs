@@ -32,6 +32,7 @@ struct Client {
     heard: Vec<(Instant, f32)>, // arrival time and rms per received packet
     connected: bool,
     pending_msgs: Vec<String>,
+    last_ping: Instant,
 }
 
 impl Client {
@@ -50,7 +51,7 @@ impl Client {
         (
             Self {
                 name, rtc, socket, addr, mid: Some(mid), pt: None, channel: None, encoder, decoder, tone,
-                sent: 0, phase: 0.0, heard: Vec::new(), connected: false, pending_msgs: Vec::new(),
+                sent: 0, phase: 0.0, heard: Vec::new(), connected: false, pending_msgs: Vec::new(), last_ping: Instant::now(),
             },
             offer.to_sdp_string(),
             pending,
@@ -82,6 +83,10 @@ impl Client {
                 }
                 Output::Event(_) => {}
             }
+        }
+        if self.channel.is_some() && now.duration_since(self.last_ping) >= Duration::from_secs(1) {
+            self.last_ping = now;
+            self.pending_msgs.push(r#"{"type":"ping"}"#.into());
         }
         if let Some(id) = self.channel {
             for message in self.pending_msgs.drain(..) {
