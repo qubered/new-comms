@@ -4,3 +4,8 @@ dist/
 data/
 *.log
 .DS_Store
+
+# User guide
+website/build/
+website/.docusaurus/
+website/.cache/
