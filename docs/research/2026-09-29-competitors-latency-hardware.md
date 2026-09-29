@@ -23,11 +23,15 @@ Clear-Com FreeSpeak II publish no end-to-end figures at all.
   power save never kicks in, and DSCP EF on the router's socket. See §4.
 - **Under about 60 ms on WiFi needs our own client stack** (native app or dedicated hardware),
   because the browser's jitter buffer (NetEQ) cannot be pushed below its own estimate.
-- **The market gap is price and openness.** Incumbent 4-wire/2-wire interfaces are $2 to 4k, wired
-  beltpacks $1.2 to 1.5k, wireless packs $2 to 3k plus about $4k per 10-pack transceiver. An
-  Artist-style port model with AES67 at Green-GO or Hollyland prices does not exist.
-- **Hardware order**: Pi appliance and Stream Deck keys, then an I/O box (2-wire, 4-wire, GPIO,
-  AES67), then a PoE keypanel and wired beltpack, then a WiFi 6 beltpack. DECT last, if ever. §6.
+- **The market gap is adoptability.** Pro systems cost thousands per endpoint ($2 to 4k
+  interfaces, $1.2 to 1.5k wired beltpacks, $2 to 3k wireless packs plus about $4k per 10-pack
+  transceiver) and need a specialist to set up. The app-based systems that crews actually pick up
+  need a native install and a dedicated server, and publish no WiFi latency. Comms that runs from
+  a link, on phones people already own, with pro depth underneath, is the opening. Direction
+  (decided, spec "Product direction"): we are not another AES67 platform; interop is a bridge.
+- **Hardware order**: accessories first (PTT buttons, Stream Deck keys, a Pi appliance), then an
+  I/O box that bridges existing rigs in (2-wire, 4-wire, GPIO; AES67 optional), then a PoE
+  keypanel and wired beltpack, then a WiFi 6 beltpack. DECT last, if ever. §6.
 
 ## 2. Where we are today
 
@@ -350,6 +354,9 @@ Keeping stages 1 to 4 wired keeps certification to EMC and a declaration of conf
   puts a standard 2-wire port on cheap boxes, which is how it gets into everyone's rig.
 
 ### 6.7 Interop, most credibility per unit of effort first
+
+These are bridges in through a comms-node, never requirements of the core (spec, "Product
+direction"). They matter for selling into rigs that already exist, not for the first show.
 
 | Standard | Why | Path | Effort (E) |
 |---|---|---|---|
