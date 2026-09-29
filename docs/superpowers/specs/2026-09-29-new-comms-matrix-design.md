@@ -136,6 +136,27 @@ Notes:
 - Calling a group or a port sets the callee's **last caller**, which Reply uses.
 - Six keys is the only count limit. Always/Vox/On Call functions are unlimited.
 
+### Routing is owned by the caller
+
+A function lives on the port that initiates it and produces nothing on the target.
+Example from an Artist config: an input port "Dante In 10" (alias CH A2) has Vox →
+`callToPort(BP 10)`. That is one crosspoint, `In 10 → BP 10.out`, gated on In 10's Vox.
+BP 10's own configuration is untouched: its six keys are whatever they are, and it simply
+hears CH A2 whenever that mic opens.
+
+Two things follow:
+- **The target can see, not edit.** Every port's editor shows an **Incoming** list
+  ("Called by Dante In 10 on Vox", "In SHOW via Stage Manager's key 1"), derived from
+  other ports' functions. Editing is done on the port that owns the function.
+- **The phone shows an incoming direct call.** While a `callToPort`/`callToGroup` into a
+  panel is open, the caller's label appears in the top bar. Reply lights only if the
+  caller has an out to talk back to; an input port has none, so a Vox call from a mic
+  shows the name but no Reply.
+
+Priority (Artist's "prio") is not in the MVP. If added it is one field on a function,
+and a higher-priority open call dims lower-priority audio at the destination, which is
+the general form of the IFB dim.
+
 ## 4. The matrix (derived)
 
 Expanding every port's functions gives the crosspoint set:
