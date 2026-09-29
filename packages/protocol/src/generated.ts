@@ -30,10 +30,16 @@ export type Volume = number;
  */
 export type KeyMode = "ptt" | "latch" | "auto";
 /**
- * This interface was referenced by `Protocol`'s JSON-Schema
- * via the `definition` "PgmListen".
+ * 0-100
  */
-export type PgmListen = "always" | "toggle";
+export type Volume1 = number;
+/**
+ * Gain in dB, -24 to +24.
+ *
+ * This interface was referenced by `Protocol`'s JSON-Schema
+ * via the `definition` "Trim".
+ */
+export type Trim = number;
 /**
  * Server-sent events on GET /api/v1/events.
  *
@@ -48,7 +54,7 @@ export type ServerEvent = SnapshotEvent | ConfigEvent | LiveEvent | LevelsEvent;
  * via the `definition` "PeerMessage".
  */
 export type PeerMessage =
-  KeyMessage | MicOffMessage | VolumeMessage | MasterVolumeMessage | PgmListenMessage | LoopbackMessage | PingMessage;
+  KeyMessage | MicOffMessage | VolumeMessage | MasterVolumeMessage | LoopbackMessage | PingMessage;
 /**
  * Data-channel messages, mix-router -> peer.
  *
@@ -103,8 +109,7 @@ export interface Pack {
 export interface PackKey {
   channelId: string;
   mode: KeyMode;
-  pgmListen: PgmListen;
-  volume: Volume;
+  volume: Volume1;
 }
 /**
  * This interface was referenced by `Protocol`'s JSON-Schema
@@ -121,6 +126,8 @@ export interface HardwareDevice {
    * Unix milliseconds.
    */
   lastSeen: number;
+  inputTrim?: Trim;
+  outputTrim?: Trim;
 }
 /**
  * What clients see: the PIN is replaced by a flag.
@@ -150,9 +157,6 @@ export interface PackLiveState {
   client?: string;
   micOff: boolean;
   keyed: {
-    [k: string]: boolean;
-  };
-  pgmOn: {
     [k: string]: boolean;
   };
   volumes: {
@@ -240,11 +244,6 @@ export interface MasterVolumeMessage {
   type: "masterVolume";
   volume: Volume;
 }
-export interface PgmListenMessage {
-  type: "pgmListen";
-  channelId: string;
-  on: boolean;
-}
 /**
  * Test tool only: hear your own microphone back through the mixer, for round-trip latency measurement.
  */
@@ -257,6 +256,10 @@ export interface LoopbackMessage {
  */
 export interface PingMessage {
   type: "ping";
+  /**
+   * True while the tab is in the background (locked screen): the router waits longer before giving up on it.
+   */
+  hidden?: boolean;
 }
 export interface PeerState {
   type: "state";
@@ -264,16 +267,13 @@ export interface PeerState {
     [k: string]: boolean;
   };
   micOff: boolean;
-  pgmOn: {
-    [k: string]: boolean;
-  };
   volumes: {
     [k: string]: Volume;
   };
   masterVolume: Volume;
 }
 /**
- * Hardware nodes only: which interface input and output the Manager chose.
+ * Hardware nodes only: which interface input and output the Manager chose. Trims are applied in the mixer, so they do not appear here.
  */
 export interface DeviceMessage {
   type: "device";
@@ -297,12 +297,13 @@ export interface PackWrite {
   keys?: {
     channelId: string;
     mode?: KeyMode;
-    pgmListen?: PgmListen;
     volume?: Volume;
   }[];
   device?: {
     input?: string;
     output?: string;
+    inputTrim?: Trim;
+    outputTrim?: Trim;
   };
 }
 /**

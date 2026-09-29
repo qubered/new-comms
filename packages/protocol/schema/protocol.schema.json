@@ -5,171 +5,447 @@
   "description": "Authoritative contracts for gateway, Talk, Manager and comms-node. TypeScript types are generated from this file (npm run generate -w @comms/protocol).",
   "type": "object",
   "properties": {
-    "channel": { "$ref": "#/$defs/Channel" },
-    "pack": { "$ref": "#/$defs/Pack" },
-    "publicPack": { "$ref": "#/$defs/PublicPack" },
-    "packLiveState": { "$ref": "#/$defs/PackLiveState" },
-    "snapshot": { "$ref": "#/$defs/Snapshot" },
-    "serverEvent": { "$ref": "#/$defs/ServerEvent" },
-    "peerMessage": { "$ref": "#/$defs/PeerMessage" },
-    "peerReply": { "$ref": "#/$defs/PeerReply" },
-    "packWrite": { "$ref": "#/$defs/PackWrite" },
-    "channelWrite": { "$ref": "#/$defs/ChannelWrite" },
-    "mediaSessionRequest": { "$ref": "#/$defs/MediaSessionRequest" },
-    "mediaSessionResponse": { "$ref": "#/$defs/MediaSessionResponse" },
-    "nodeRegistration": { "$ref": "#/$defs/NodeRegistration" }
+    "channel": {
+      "$ref": "#/$defs/Channel"
+    },
+    "pack": {
+      "$ref": "#/$defs/Pack"
+    },
+    "publicPack": {
+      "$ref": "#/$defs/PublicPack"
+    },
+    "packLiveState": {
+      "$ref": "#/$defs/PackLiveState"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/Snapshot"
+    },
+    "serverEvent": {
+      "$ref": "#/$defs/ServerEvent"
+    },
+    "peerMessage": {
+      "$ref": "#/$defs/PeerMessage"
+    },
+    "peerReply": {
+      "$ref": "#/$defs/PeerReply"
+    },
+    "packWrite": {
+      "$ref": "#/$defs/PackWrite"
+    },
+    "channelWrite": {
+      "$ref": "#/$defs/ChannelWrite"
+    },
+    "mediaSessionRequest": {
+      "$ref": "#/$defs/MediaSessionRequest"
+    },
+    "mediaSessionResponse": {
+      "$ref": "#/$defs/MediaSessionResponse"
+    },
+    "nodeRegistration": {
+      "$ref": "#/$defs/NodeRegistration"
+    }
   },
   "$defs": {
-    "ChannelType": { "title": "ChannelType", "enum": ["partyline", "direct", "pgm"] },
-    "PackType": { "title": "PackType", "enum": ["human", "hardware"] },
-    "KeyMode": { "title": "KeyMode", "enum": ["ptt", "latch", "auto"] },
-    "PgmListen": { "title": "PgmListen", "enum": ["always", "toggle"] },
-    "Volume": { "title": "Volume", "type": "number", "minimum": 0, "maximum": 100, "description": "0-100" },
-    "Pin": { "title": "Pin", "type": "string", "pattern": "^[0-9]{4}$", "description": "Exactly four digits." },
-
+    "ChannelType": {
+      "title": "ChannelType",
+      "enum": [
+        "partyline",
+        "direct",
+        "pgm"
+      ]
+    },
+    "PackType": {
+      "title": "PackType",
+      "enum": [
+        "human",
+        "hardware"
+      ]
+    },
+    "KeyMode": {
+      "title": "KeyMode",
+      "enum": [
+        "ptt",
+        "latch",
+        "auto"
+      ]
+    },
+    "Volume": {
+      "title": "Volume",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "0-100"
+    },
+    "Pin": {
+      "title": "Pin",
+      "type": "string",
+      "pattern": "^[0-9]{4}$",
+      "description": "Exactly four digits."
+    },
     "Channel": {
       "title": "Channel",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "type", "members"],
+      "required": [
+        "id",
+        "name",
+        "type",
+        "members"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string", "minLength": 1, "description": "Key heading, shown large on the Talk key." },
-        "subText": { "type": "string", "description": "Small line under the heading." },
-        "type": { "$ref": "#/$defs/ChannelType" },
-        "members": { "type": "array", "items": { "type": "string" }, "description": "Pack ids. Derived from pack keys by the gateway; exactly two for a direct line." }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Key heading, shown large on the Talk key."
+        },
+        "subText": {
+          "type": "string",
+          "description": "Small line under the heading."
+        },
+        "type": {
+          "$ref": "#/$defs/ChannelType"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Pack ids. Derived from pack keys by the gateway; exactly two for a direct line."
+        }
       }
     },
-
     "PackKey": {
       "title": "PackKey",
       "type": "object",
       "additionalProperties": false,
-      "required": ["channelId", "mode", "pgmListen", "volume"],
+      "required": [
+        "channelId",
+        "mode",
+        "volume"
+      ],
       "properties": {
-        "channelId": { "type": "string" },
-        "mode": { "$ref": "#/$defs/KeyMode" },
-        "pgmListen": { "$ref": "#/$defs/PgmListen" },
-        "volume": { "$ref": "#/$defs/Volume" }
+        "channelId": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/KeyMode"
+        },
+        "volume": {
+          "$ref": "#/$defs/Volume",
+          "description": "Level on the key. Ignored for PGM channels and hardware packs, which are heard at full level."
+        }
       }
     },
-
     "HardwareDevice": {
       "title": "HardwareDevice",
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "address", "inputs", "outputs", "lastSeen"],
+      "required": [
+        "name",
+        "address",
+        "inputs",
+        "outputs",
+        "lastSeen"
+      ],
       "properties": {
-        "name": { "type": "string" },
-        "address": { "type": "string" },
-        "inputs": { "type": "array", "items": { "type": "string" } },
-        "outputs": { "type": "array", "items": { "type": "string" } },
-        "input": { "type": "string" },
-        "output": { "type": "string" },
-        "lastSeen": { "type": "number", "description": "Unix milliseconds." }
+        "name": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "input": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "lastSeen": {
+          "type": "number",
+          "description": "Unix milliseconds."
+        },
+        "inputTrim": {
+          "$ref": "#/$defs/Trim"
+        },
+        "outputTrim": {
+          "$ref": "#/$defs/Trim"
+        }
       }
     },
-
     "Pack": {
       "title": "Pack",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "type", "masterVolume", "keys"],
+      "required": [
+        "id",
+        "name",
+        "type",
+        "masterVolume",
+        "keys"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string", "minLength": 1 },
-        "type": { "$ref": "#/$defs/PackType" },
-        "pin": { "$ref": "#/$defs/Pin" },
-        "masterVolume": { "$ref": "#/$defs/Volume" },
-        "keys": { "type": "array", "items": { "$ref": "#/$defs/PackKey" }, "description": "Ordered: this is the key layout on the phone." },
-        "device": { "$ref": "#/$defs/HardwareDevice" }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "$ref": "#/$defs/PackType"
+        },
+        "pin": {
+          "$ref": "#/$defs/Pin"
+        },
+        "masterVolume": {
+          "$ref": "#/$defs/Volume"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackKey"
+          },
+          "description": "Ordered: this is the key layout on the phone."
+        },
+        "device": {
+          "$ref": "#/$defs/HardwareDevice"
+        }
       }
     },
-
     "PublicPack": {
       "title": "PublicPack",
       "description": "What clients see: the PIN is replaced by a flag.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "type", "masterVolume", "keys", "hasPin"],
+      "required": [
+        "id",
+        "name",
+        "type",
+        "masterVolume",
+        "keys",
+        "hasPin"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "type": { "$ref": "#/$defs/PackType" },
-        "masterVolume": { "$ref": "#/$defs/Volume" },
-        "keys": { "type": "array", "items": { "$ref": "#/$defs/PackKey" } },
-        "device": { "$ref": "#/$defs/HardwareDevice" },
-        "hasPin": { "type": "boolean" }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/PackType"
+        },
+        "masterVolume": {
+          "$ref": "#/$defs/Volume"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackKey"
+          }
+        },
+        "device": {
+          "$ref": "#/$defs/HardwareDevice"
+        },
+        "hasPin": {
+          "type": "boolean"
+        }
       }
     },
-
     "PackLiveState": {
       "title": "PackLiveState",
       "type": "object",
       "additionalProperties": false,
-      "required": ["packId", "connected", "micOff", "keyed", "pgmOn", "volumes", "masterVolume"],
+      "required": [
+        "packId",
+        "connected",
+        "micOff",
+        "keyed",
+        "volumes",
+        "masterVolume"
+      ],
       "properties": {
-        "packId": { "type": "string" },
-        "connected": { "type": "boolean" },
-        "client": { "type": "string", "description": "e.g. \"iPhone, Safari\"; hardware: address." },
-        "micOff": { "type": "boolean" },
-        "keyed": { "type": "object", "additionalProperties": { "type": "boolean" } },
-        "pgmOn": { "type": "object", "additionalProperties": { "type": "boolean" } },
-        "volumes": { "type": "object", "additionalProperties": { "$ref": "#/$defs/Volume" } },
-        "masterVolume": { "$ref": "#/$defs/Volume" }
+        "packId": {
+          "type": "string"
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "client": {
+          "type": "string",
+          "description": "e.g. \"iPhone, Safari\"; hardware: address."
+        },
+        "micOff": {
+          "type": "boolean"
+        },
+        "keyed": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "volumes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Volume"
+          }
+        },
+        "masterVolume": {
+          "$ref": "#/$defs/Volume"
+        }
       }
     },
-
     "Snapshot": {
       "title": "Snapshot",
       "type": "object",
       "additionalProperties": false,
-      "required": ["rev", "name", "channels", "packs", "live"],
+      "required": [
+        "rev",
+        "name",
+        "channels",
+        "packs",
+        "live"
+      ],
       "properties": {
-        "rev": { "type": "integer", "minimum": 0 },
-        "name": { "type": "string", "description": "Shown in the top bar of both apps, e.g. \"Stage A\"." },
-        "channels": { "type": "array", "items": { "$ref": "#/$defs/Channel" } },
-        "packs": { "type": "array", "items": { "$ref": "#/$defs/PublicPack" } },
-        "live": { "type": "object", "additionalProperties": { "$ref": "#/$defs/PackLiveState" } }
+        "rev": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string",
+          "description": "Shown in the top bar of both apps, e.g. \"Stage A\"."
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Channel"
+          }
+        },
+        "packs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PublicPack"
+          }
+        },
+        "live": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PackLiveState"
+          }
+        }
       }
     },
-
     "SnapshotEvent": {
       "title": "SnapshotEvent",
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "rev", "name", "channels", "packs", "live"],
+      "required": [
+        "type",
+        "rev",
+        "name",
+        "channels",
+        "packs",
+        "live"
+      ],
       "properties": {
-        "type": { "const": "snapshot" },
-        "rev": { "type": "integer" },
-        "name": { "type": "string" },
-        "channels": { "type": "array", "items": { "$ref": "#/$defs/Channel" } },
-        "packs": { "type": "array", "items": { "$ref": "#/$defs/PublicPack" } },
-        "live": { "type": "object", "additionalProperties": { "$ref": "#/$defs/PackLiveState" } }
+        "type": {
+          "const": "snapshot"
+        },
+        "rev": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Channel"
+          }
+        },
+        "packs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PublicPack"
+          }
+        },
+        "live": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PackLiveState"
+          }
+        }
       }
     },
     "ConfigEvent": {
       "title": "ConfigEvent",
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "rev", "channels", "packs"],
+      "required": [
+        "type",
+        "rev",
+        "channels",
+        "packs"
+      ],
       "properties": {
-        "type": { "const": "config" },
-        "rev": { "type": "integer" },
-        "channels": { "type": "array", "items": { "$ref": "#/$defs/Channel" } },
-        "packs": { "type": "array", "items": { "$ref": "#/$defs/PublicPack" } }
+        "type": {
+          "const": "config"
+        },
+        "rev": {
+          "type": "integer"
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Channel"
+          }
+        },
+        "packs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PublicPack"
+          }
+        }
       }
     },
     "LiveEvent": {
       "title": "LiveEvent",
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "rev", "packId", "live"],
+      "required": [
+        "type",
+        "rev",
+        "packId",
+        "live"
+      ],
       "properties": {
-        "type": { "const": "live" },
-        "rev": { "type": "integer" },
-        "packId": { "type": "string" },
-        "live": { "$ref": "#/$defs/PackLiveState" }
+        "type": {
+          "const": "live"
+        },
+        "rev": {
+          "type": "integer"
+        },
+        "packId": {
+          "type": "string"
+        },
+        "live": {
+          "$ref": "#/$defs/PackLiveState"
+        }
       }
     },
     "LevelsEvent": {
@@ -177,37 +453,160 @@
       "description": "Not revision-gated: pack id -> mic level 0..1 for packs whose mic is open.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "levels"],
+      "required": [
+        "type",
+        "levels"
+      ],
       "properties": {
-        "type": { "const": "levels" },
-        "levels": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } }
+        "type": {
+          "const": "levels"
+        },
+        "levels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
       }
     },
     "ServerEvent": {
       "title": "ServerEvent",
       "description": "Server-sent events on GET /api/v1/events.",
       "oneOf": [
-        { "$ref": "#/$defs/SnapshotEvent" },
-        { "$ref": "#/$defs/ConfigEvent" },
-        { "$ref": "#/$defs/LiveEvent" },
-        { "$ref": "#/$defs/LevelsEvent" }
+        {
+          "$ref": "#/$defs/SnapshotEvent"
+        },
+        {
+          "$ref": "#/$defs/ConfigEvent"
+        },
+        {
+          "$ref": "#/$defs/LiveEvent"
+        },
+        {
+          "$ref": "#/$defs/LevelsEvent"
+        }
       ]
     },
-
     "PeerMessage": {
       "title": "PeerMessage",
       "description": "Data-channel messages, peer -> mix-router. Reliable and ordered.",
       "oneOf": [
-        { "type": "object", "additionalProperties": false, "required": ["type", "channelId", "on"], "title": "KeyMessage", "properties": { "type": { "const": "key" }, "channelId": { "type": "string" }, "on": { "type": "boolean" } } },
-        { "type": "object", "additionalProperties": false, "required": ["type", "on"], "title": "MicOffMessage", "properties": { "type": { "const": "micOff" }, "on": { "type": "boolean" } } },
-        { "type": "object", "additionalProperties": false, "required": ["type", "channelId", "volume"], "title": "VolumeMessage", "properties": { "type": { "const": "volume" }, "channelId": { "type": "string" }, "volume": { "$ref": "#/$defs/Volume" } } },
-        { "type": "object", "additionalProperties": false, "required": ["type", "volume"], "title": "MasterVolumeMessage", "properties": { "type": { "const": "masterVolume" }, "volume": { "$ref": "#/$defs/Volume" } } },
-        { "type": "object", "additionalProperties": false, "required": ["type", "channelId", "on"], "title": "PgmListenMessage", "properties": { "type": { "const": "pgmListen" }, "channelId": { "type": "string" }, "on": { "type": "boolean" } } },
-        { "type": "object", "additionalProperties": false, "required": ["type", "on"], "title": "LoopbackMessage", "description": "Test tool only: hear your own microphone back through the mixer, for round-trip latency measurement.", "properties": { "type": { "const": "loopback" }, "on": { "type": "boolean" } } },
-        { "type": "object", "additionalProperties": false, "required": ["type"], "title": "PingMessage", "description": "Heartbeat once a second; answered with a pong. Silence for a few seconds ends the session.", "properties": { "type": { "const": "ping" } } }
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "channelId",
+            "on"
+          ],
+          "title": "KeyMessage",
+          "properties": {
+            "type": {
+              "const": "key"
+            },
+            "channelId": {
+              "type": "string"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "on"
+          ],
+          "title": "MicOffMessage",
+          "properties": {
+            "type": {
+              "const": "micOff"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "channelId",
+            "volume"
+          ],
+          "title": "VolumeMessage",
+          "properties": {
+            "type": {
+              "const": "volume"
+            },
+            "channelId": {
+              "type": "string"
+            },
+            "volume": {
+              "$ref": "#/$defs/Volume"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "volume"
+          ],
+          "title": "MasterVolumeMessage",
+          "properties": {
+            "type": {
+              "const": "masterVolume"
+            },
+            "volume": {
+              "$ref": "#/$defs/Volume"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "on"
+          ],
+          "title": "LoopbackMessage",
+          "description": "Test tool only: hear your own microphone back through the mixer, for round-trip latency measurement.",
+          "properties": {
+            "type": {
+              "const": "loopback"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "title": "PingMessage",
+          "description": "Heartbeat once a second; answered with a pong. Silence for a few seconds ends the session.",
+          "properties": {
+            "type": {
+              "const": "ping"
+            },
+            "hidden": {
+              "type": "boolean",
+              "description": "True while the tab is in the background (locked screen): the router waits longer before giving up on it."
+            }
+          }
+        }
       ]
     },
-
     "PeerReply": {
       "title": "PeerReply",
       "description": "Data-channel messages, mix-router -> peer.",
@@ -216,100 +615,244 @@
           "title": "PeerState",
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "keyed", "micOff", "pgmOn", "volumes", "masterVolume"],
+          "required": [
+            "type",
+            "keyed",
+            "micOff",
+            "volumes",
+            "masterVolume"
+          ],
           "properties": {
-            "type": { "const": "state" },
-            "keyed": { "type": "object", "additionalProperties": { "type": "boolean" } },
-            "micOff": { "type": "boolean" },
-            "pgmOn": { "type": "object", "additionalProperties": { "type": "boolean" } },
-            "volumes": { "type": "object", "additionalProperties": { "$ref": "#/$defs/Volume" } },
-            "masterVolume": { "$ref": "#/$defs/Volume" }
+            "type": {
+              "const": "state"
+            },
+            "keyed": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "boolean"
+              }
+            },
+            "micOff": {
+              "type": "boolean"
+            },
+            "volumes": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Volume"
+              }
+            },
+            "masterVolume": {
+              "$ref": "#/$defs/Volume"
+            }
           }
         },
         {
           "title": "DeviceMessage",
-          "description": "Hardware nodes only: which interface input and output the Manager chose.",
+          "description": "Hardware nodes only: which interface input and output the Manager chose. Trims are applied in the mixer, so they do not appear here.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["type"],
-          "properties": { "type": { "const": "device" }, "input": { "type": ["string", "null"] }, "output": { "type": ["string", "null"] } }
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "device"
+            },
+            "input": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "output": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
         },
-        { "title": "PongMessage", "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "const": "pong" } } }
+        {
+          "title": "PongMessage",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "pong"
+            }
+          }
+        }
       ]
     },
-
     "PackWrite": {
       "title": "PackWrite",
       "description": "Body of POST/PATCH /api/v1/packs. On PATCH every field is optional. pin \"\" removes the PIN.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
-        "type": { "$ref": "#/$defs/PackType" },
-        "pin": { "oneOf": [{ "$ref": "#/$defs/Pin" }, { "const": "" }] },
-        "masterVolume": { "$ref": "#/$defs/Volume" },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/PackType"
+        },
+        "pin": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Pin"
+            },
+            {
+              "const": ""
+            }
+          ]
+        },
+        "masterVolume": {
+          "$ref": "#/$defs/Volume"
+        },
         "keys": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["channelId"],
+            "required": [
+              "channelId"
+            ],
             "properties": {
-              "channelId": { "type": "string" },
-              "mode": { "$ref": "#/$defs/KeyMode" },
-              "pgmListen": { "$ref": "#/$defs/PgmListen" },
-              "volume": { "$ref": "#/$defs/Volume" }
+              "channelId": {
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/$defs/KeyMode"
+              },
+              "volume": {
+                "$ref": "#/$defs/Volume"
+              }
             }
           }
         },
         "device": {
           "type": "object",
           "additionalProperties": false,
-          "properties": { "input": { "type": "string" }, "output": { "type": "string" } }
+          "properties": {
+            "input": {
+              "type": "string"
+            },
+            "output": {
+              "type": "string"
+            },
+            "inputTrim": {
+              "$ref": "#/$defs/Trim"
+            },
+            "outputTrim": {
+              "$ref": "#/$defs/Trim"
+            }
+          }
         }
       }
     },
-
     "ChannelWrite": {
       "title": "ChannelWrite",
       "description": "Body of POST/PATCH /api/v1/channels. On PATCH every field is optional. subText \"\" clears it.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
-        "subText": { "type": "string" },
-        "type": { "$ref": "#/$defs/ChannelType" },
-        "members": { "type": "array", "items": { "type": "string" } }
+        "name": {
+          "type": "string"
+        },
+        "subText": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ChannelType"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
-
     "MediaSessionRequest": {
       "title": "MediaSessionRequest",
       "description": "POST /api/v1/media/sessions (WHEP-style).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["packId", "offer"],
-      "properties": { "packId": { "type": "string" }, "offer": { "type": "string" }, "pin": { "type": "string" } }
+      "required": [
+        "packId",
+        "offer"
+      ],
+      "properties": {
+        "packId": {
+          "type": "string"
+        },
+        "offer": {
+          "type": "string"
+        },
+        "pin": {
+          "type": "string"
+        }
+      }
     },
     "MediaSessionResponse": {
       "title": "MediaSessionResponse",
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionId", "answer"],
-      "properties": { "sessionId": { "type": "string" }, "answer": { "type": "string" } }
+      "required": [
+        "sessionId",
+        "answer"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "answer": {
+          "type": "string"
+        }
+      }
     },
     "NodeRegistration": {
       "title": "NodeRegistration",
       "description": "POST /api/v1/nodes/register.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["deviceName", "availableInputs", "availableOutputs", "address"],
+      "required": [
+        "deviceName",
+        "availableInputs",
+        "availableOutputs",
+        "address"
+      ],
       "properties": {
-        "deviceName": { "type": "string", "minLength": 1 },
-        "availableInputs": { "type": "array", "items": { "type": "string" } },
-        "availableOutputs": { "type": "array", "items": { "type": "string" } },
-        "address": { "type": "string" }
+        "deviceName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "availableInputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "availableOutputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "address": {
+          "type": "string"
+        }
       }
+    },
+    "Trim": {
+      "title": "Trim",
+      "type": "number",
+      "minimum": -24,
+      "maximum": 24,
+      "description": "Gain in dB, -24 to +24."
     }
   }
 }

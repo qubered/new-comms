@@ -31,7 +31,6 @@ export function normaliseKey(raw: Partial<PackKey> & { channelId: string }, chan
   return {
     channelId: raw.channelId,
     mode: raw.mode === "latch" || raw.mode === "auto" || raw.mode === "ptt" ? raw.mode : base.mode,
-    pgmListen: raw.pgmListen === "toggle" ? "toggle" : "always",
     volume: clamp(raw.volume ?? base.volume),
   };
 }
@@ -45,6 +44,8 @@ export class Store {
   constructor(private readonly path: string) {
     if (existsSync(path)) {
       this.config = JSON.parse(readFileSync(path, "utf8")) as StoredConfig;
+      // Older files had a per-key PGM on/off setting; PGM mappings are now always heard.
+      for (const pack of this.config.packs) for (const key of pack.keys) delete (key as { pgmListen?: unknown }).pgmListen;
       reconcile(this.config);
     }
   }

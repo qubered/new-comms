@@ -14,9 +14,9 @@ const prod = await call("POST", "/channels", { name: "Production", subText: "SM,
 const cams = await call("POST", "/channels", { name: "Cameras", subText: "Cam 1, Cam 2, director", type: "partyline" });
 const lx = await call("POST", "/channels", { name: "Lighting", subText: "Jo and SM", type: "partyline" });
 const pgm = await call("POST", "/channels", { name: "Program", subText: "Show mix", type: "pgm" });
-const key = (channel, mode = "ptt", extra = {}) => ({ channelId: channel.id, mode, ...extra });
-await call("POST", "/packs", { name: "Stage Manager", keys: [key(prod, "auto"), key(cams), key(lx, "latch"), key(pgm, "ptt", { pgmListen: "toggle" })] });
-await call("POST", "/packs", { name: "Director", pin: "1234", keys: [key(prod, "auto"), key(cams, "auto"), key(pgm, "ptt", { pgmListen: "toggle" })] });
+const key = (channel, mode = "ptt") => ({ channelId: channel.id, mode });
+await call("POST", "/packs", { name: "Stage Manager", keys: [key(prod, "auto"), key(cams), key(lx, "latch"), key(pgm)] });
+await call("POST", "/packs", { name: "Director", pin: "1234", keys: [key(prod, "auto"), key(cams, "auto"), key(pgm)] });
 await call("POST", "/packs", { name: "Camera 1", keys: [key(cams), key(prod)] });
 await call("POST", "/packs", { name: "Camera 2", keys: [key(cams), key(prod)] });
 await call("POST", "/packs", { name: "Lighting", keys: [key(lx, "auto"), key(prod)] });

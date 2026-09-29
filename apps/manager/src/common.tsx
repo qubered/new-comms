@@ -61,7 +61,11 @@ export function PhonePreview({
   keyed: Record<string, boolean>;
   systemName: string;
 }) {
-  const keys = pack.keys.map((key) => ({ key, channel: channels.find((c) => c.id === key.channelId) })).filter((k) => k.channel);
+  const all = pack.keys.map((key) => ({ key, channel: channels.find((c) => c.id === key.channelId) })).filter((k) => k.channel);
+  const hardware = pack.type === "hardware";
+  // A phone shows buttons only; PGM mappings play straight into the pack.
+  const keys = hardware ? all : all.filter(({ channel }) => channel!.type !== "pgm");
+  const feeds = hardware ? [] : all.filter(({ channel }) => channel!.type === "pgm");
   return (
     <div className="preview">
       <div className="pt">
@@ -78,9 +82,42 @@ export function PhonePreview({
           ))}
         </div>
       ) : (
-        <div className="none">No keys yet</div>
+        <div className="none">{feeds.length ? "No buttons yet" : "No keys yet"}</div>
       )}
-      <div className="cap">{pack.type === "hardware" ? "What this node is bound to" : "What they see on their phone"}</div>
+      {feeds.length > 0 && <div className="cap">Also hearing: {feeds.map(({ channel }) => channel!.name).join(", ")}</div>}
+      <div className="cap">{hardware ? "What this node is bound to" : "What they see on their phone"}</div>
+    </div>
+  );
+}
+
+const TRIM_MAX = 24;
+export const formatTrim = (db: number) => `${db > 0 ? "+" : db < 0 ? "−" : ""}${Math.abs(db).toFixed(db % 1 === 0 ? 0 : 1)} dB`;
+
+/** Gain trim, -24 to +24 dB in half-dB steps. Saves when you let go, not on every pixel. */
+export function TrimControl({ label, value = 0, disabled, onCommit }: { label: string; value?: number; disabled?: boolean; onCommit(db: number): void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = (db = draft) => db !== value && onCommit(db);
+  return (
+    <div className="trim">
+      <input
+        type="range"
+        min={-TRIM_MAX}
+        max={TRIM_MAX}
+        step={0.5}
+        value={draft}
+        disabled={disabled}
+        aria-label={label}
+        style={{ "--v": `${((draft + TRIM_MAX) / (2 * TRIM_MAX)) * 100}%` } as React.CSSProperties}
+        onChange={(event) => setDraft(Number(event.target.value))}
+        onPointerUp={() => commit()}
+        onKeyUp={() => commit()}
+        onBlur={() => commit()}
+      />
+      <span className="num trim-v">{formatTrim(draft)}</span>
+      <button className="btn quiet" disabled={disabled || draft === 0} onClick={() => (setDraft(0), commit(0))}>
+        Reset
+      </button>
     </div>
   );
 }
@@ -106,7 +143,11 @@ export function Head({ title, sub, action }: { title: string; sub: string; actio
   );
 }
 
-export const defaultKeyFor = (channel: Channel): PackKey => ({ channelId: channel.id, mode: "auto", pgmListen: "always", volume: channel.type === "pgm" ? 70 : 80 });
+export const defaultKeyFor = (channel: Channel): PackKey => ({ channelId: channel.id, mode: "auto", volume: channel.type === "pgm" ? 100 : 80 });
+
+/** Buttons are keys on partyline and direct channels; PGM mappings have no key and no level. */
+export const isButton = (key: PackKey, channels: Channel[]) => channels.find((c) => c.id === key.channelId)?.type !== "pgm";
+export const buttonCount = (pack: { keys: PackKey[] }, channels: Channel[]) => pack.keys.filter((key) => isButton(key, channels)).length;
 
 export function relativeTime(timestamp?: number): string {
   if (!timestamp) return "never";

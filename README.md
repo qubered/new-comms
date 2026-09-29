@@ -115,14 +115,50 @@ revision-gated deltas run over SSE; a gap forces a fresh snapshot.
 - Master and per-key volume are applied in mix-router (one downstream track per pack).
 - A pack has one live session. A second phone picking the same pack takes it over.
 
+## Buttons, PGM and hardware
+
+- A person's pack has at most **6 buttons** (keys on partyline and direct channels). The
+  gateway refuses a seventh, whichever way it is added, and the Manager shows "4 of 6".
+- **PGM channels are not buttons.** They have no key, no level and no on/off: they play
+  straight into the pack at full level, and a pack can have any number. On the phone they
+  appear as "Also hearing: Program, Announce". (This replaced the earlier per-pack "can turn
+  off" PGM setting; old `state.json` files are migrated on load.)
+- A **hardware node has no limit** on channels. It has one input and one output circuit: its
+  input is added to every channel it is on, and its output is the mix of all of them.
+- Each node has an **input trim and output trim, -24 to +24 dB** (Manager → Packs or
+  Hardware). They are applied in mix-router, so they take effect live with no node restart.
+
+## Audio devices and listening with the screen locked
+
+Menu → **Audio devices** picks the microphone and, in browsers that allow it (Chrome, Edge,
+Firefox on desktop and Android; not Safari), the speaker. The choice is remembered per
+browser. Switching microphone while connected swaps the track without reconnecting.
+
+Listening does not depend on the microphone: if it is blocked, unplugged or suspended, the
+phone still joins and plays the mix ("Listening only"; the Mic button says "No mic" and
+retries when tapped). To keep listening with the screen locked the app:
+
+- sends its heartbeat from a Web Worker, because browsers throttle page timers on a hidden
+  tab; a hidden tab is given 15 to 20 s of silence before it is dropped instead of 4 s
+- registers a media session (lock-screen controls; pause is ignored) and asks the platform
+  for a play-and-record audio session where supported
+- resumes playback if the OS pauses it, and re-acquires the microphone and reconnects if
+  needed when the app returns to the foreground
+
+**This is best effort, not a guarantee, and it has not been tested on a real phone.** Web
+pages have no way to force the OS to keep them alive. Android Chrome generally keeps playing
+audio with the screen off. iOS Safari usually keeps audio playing but suspends microphone
+capture while locked, so you can hear but not talk until you unlock; installing the app to
+the home screen helps. If a locked phone must be reliable for a whole show, the dependable
+fix is a native app or keeping the screen on (the app already holds a screen wake lock).
+
 ## Known limits
 
-- Phones and nodes ping the router once a second; either side gives up after 3.5 to 4 s of
-  silence (measured: killing the mixer is noticed on a phone in about 3.5 s, then it
+- Phones and nodes ping the router once a second; a visible tab is dropped after 3.5 to 4 s
+  of silence (measured: killing the mixer is noticed on a phone in about 3.5 s, then it
   reconnects in under a second).
 - No packet-loss concealment; an underrun is silence. The mixer buffers about 20 ms per peer.
 - Someone heard on two channels you share is heard twice (the two contributions add).
-- iOS Safari: audio starts inside the tap that picks the pack, and the screen is kept awake
-  while on the keys screen. A backgrounded tab still loses audio and reconnects on return.
-  Not yet tested on real iOS hardware.
+- A node on several channels hears the sum of each channel's mix, so a person on two of its
+  channels is heard by the node twice.
 - The Manager has no authentication (LAN trust, per the spec).

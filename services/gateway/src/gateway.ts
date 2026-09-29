@@ -14,6 +14,7 @@ import type {
   ServerEvent,
   Snapshot,
 } from "@comms/protocol";
+import { MAX_BUTTONS } from "@comms/protocol";
 import { HttpError } from "./errors.ts";
 import { MixRouter, type RouterEvent } from "./router.ts";
 import { validate } from "./validate.ts";
@@ -26,7 +27,6 @@ const emptyLive = (packId: string, masterVolume = 80): PackLiveState => ({
   connected: false,
   micOff: false,
   keyed: {},
-  pgmOn: {},
   volumes: {},
   masterVolume,
 });
@@ -151,7 +151,6 @@ export class Gateway extends EventEmitter {
         this.patchLive(event.packId, {
           micOff: event.micOff,
           keyed: event.keyed,
-          pgmOn: event.pgmOn,
           volumes: event.volumes,
           masterVolume: event.masterVolume,
         });
@@ -213,7 +212,20 @@ export class Gateway extends EventEmitter {
     });
   }
 
-  private static readonly ONE_KEY = "A hardware pack bridges one channel";
+  /** A person's phone has room for this many buttons (partyline and direct keys). */
+  static readonly MAX_BUTTONS = MAX_BUTTONS;
+
+  /** Buttons are keys on talkable channels. PGM mappings are not buttons: they have no key and no level. */
+  private buttons(keys: PackKey[], channels = this.channels): number {
+    return keys.filter((key) => channels.find((c) => c.id === key.channelId)?.type !== "pgm").length;
+  }
+
+  /** Hardware nodes may sit on any number of channels; people are limited to six buttons. */
+  private assertButtons(pack: { type: string; name: string }, keys: PackKey[], channels = this.channels): void {
+    if (pack.type === "human" && this.buttons(keys, channels) > MAX_BUTTONS) {
+      throw new HttpError(409, `${pack.name || "A pack"} can have at most ${MAX_BUTTONS} buttons. PGM channels do not count.`);
+    }
+  }
 
   private checkPin(pin: unknown): string | undefined {
     if (pin === undefined || pin === null || pin === "") return undefined;
@@ -237,7 +249,7 @@ export class Gateway extends EventEmitter {
       masterVolume: clamp(Number(body.masterVolume ?? 80)),
       keys: body.keys ? this.keysFrom(body.keys) : [],
     };
-    if (pack.type === "hardware" && pack.keys.length > 1) throw new HttpError(400, Gateway.ONE_KEY);
+    this.assertButtons(pack, pack.keys);
     const pin = this.checkPin(body.pin);
     if (pin && pack.type === "human") pack.pin = pin;
     this.packs.push(pack);
@@ -254,10 +266,8 @@ export class Gateway extends EventEmitter {
     }
     if (body.type !== undefined && body.type !== pack.type) {
       if (pack.device) throw new HttpError(409, "This pack belongs to a registered node; remove the node to change its type");
-      if (body.type === "hardware") {
-        pack.keys = pack.keys.slice(0, 1);
-        delete pack.pin;
-      }
+      if (body.type === "human") this.assertButtons({ type: "human", name: pack.name }, pack.keys);
+      if (body.type === "hardware") delete pack.pin;
       pack.type = body.type;
     }
     if (body.masterVolume !== undefined) pack.masterVolume = clamp(Number(body.masterVolume));
@@ -268,13 +278,15 @@ export class Gateway extends EventEmitter {
     }
     if (body.keys !== undefined) {
       const keys = this.keysFrom(body.keys);
-      if (pack.type === "hardware" && keys.length > 1) throw new HttpError(400, Gateway.ONE_KEY);
+      this.assertButtons(pack, keys);
       pack.keys = keys;
     }
     if (pack.device && body.device && typeof body.device === "object") {
-      const { input, output } = body.device as Partial<HardwareDevice>;
+      const { input, output, inputTrim, outputTrim } = body.device as Partial<HardwareDevice>;
       if (input !== undefined) pack.device.input = input;
       if (output !== undefined) pack.device.output = output;
+      if (inputTrim !== undefined) pack.device.inputTrim = inputTrim;
+      if (outputTrim !== undefined) pack.device.outputTrim = outputTrim;
     }
     this.pushConfig();
     return pack;
@@ -311,11 +323,10 @@ export class Gateway extends EventEmitter {
 
   /** Editing "who's on it" adds or removes a key on each affected pack. */
   private setMembers(channel: Channel, members: string[]): void {
+    // Check everyone first so a refusal leaves nothing half-changed.
     for (const pack of this.packs) {
       const adding = members.includes(pack.id) && !pack.keys.some((key) => key.channelId === channel.id);
-      if (adding && pack.type === "hardware" && pack.keys.length >= 1) {
-        throw new HttpError(409, `${pack.name} already bridges a channel`);
-      }
+      if (adding) this.assertButtons(pack, [...pack.keys, normaliseKey({ channelId: channel.id }, channel)]);
     }
     for (const pack of this.packs) {
       const has = pack.keys.some((key) => key.channelId === channel.id);
@@ -336,7 +347,12 @@ export class Gateway extends EventEmitter {
       if (typeof body.subText === "string" && body.subText) channel.subText = body.subText;
       else delete channel.subText;
     }
-    if (body.type !== undefined) channel.type = this.channelType(body.type);
+    if (body.type !== undefined && this.channelType(body.type) !== channel.type) {
+      // Turning a PGM into a talkable channel turns every mapping into a button: make sure they fit.
+      const next = this.channels.map((c) => (c.id === channel.id ? { ...c, type: this.channelType(body.type) } : c));
+      for (const pack of this.packs) if (pack.keys.some((key) => key.channelId === channel.id)) this.assertButtons(pack, pack.keys, next);
+      channel.type = this.channelType(body.type);
+    }
     if (Array.isArray(body.members)) this.setMembers(channel, body.members.map(String));
     this.pushConfig();
     return channel;

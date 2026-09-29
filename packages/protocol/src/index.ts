@@ -5,13 +5,22 @@ import type { ChannelType, PackKey, ServerEvent, Snapshot } from "./generated.ts
 
 export * from "./generated.ts";
 
+/**
+ * A person's phone has room for this many buttons (keys on partyline and direct channels).
+ * PGM channels are not buttons: they are listen-only mappings with no key and no level, and
+ * a pack can have any number of them. Hardware nodes have no limit at all.
+ */
+export const MAX_BUTTONS = 6;
+
+/** Trim range for a hardware node's input and output, in dB. */
+export const TRIM_RANGE_DB = 24;
+
 /** Default new key on a pack. */
 export function defaultKey(channelId: string, type: ChannelType): PackKey {
   return {
     channelId,
     mode: "ptt",
-    pgmListen: "always",
-    volume: 80,
+    volume: type === "pgm" ? 100 : 80,
   };
 }
 

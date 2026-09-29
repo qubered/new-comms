@@ -95,8 +95,7 @@ export function Live({
       return (state?.connected && (levels[pack.id] ?? 0) > AUDIBLE) ? <span className="cell on">Talking</span> : <span className="cell src">Always on</span>;
     }
     if (channel.type === "pgm") {
-      const muted = key.pgmListen === "toggle" && state?.pgmOn[channel.id] === false;
-      return <span className={`cell${muted ? " muted" : ""}`}>{muted ? "Off" : "Listen"}</span>;
+      return <span className="cell">Listen</span>;
     }
     const keyed = Boolean(state?.keyed[channel.id]) && !state?.micOff;
     return <span className={`cell${keyed ? " on" : ""}`}>{keyed ? "Talking" : MODE_LABEL[key.mode]}</span>;
@@ -173,7 +172,7 @@ export function Live({
             )}
           </div>
           <p className="legend">
-            Hold, Tap and Tap/hold are how the key behaves for that pack. Feed is a hardware node supplying the channel. Struck out means the pack has muted that feed for themselves.
+            Hold, Tap and Tap/hold are how the key behaves for that pack. Feed is a hardware node supplying the channel. Listen is a PGM mapping: no button, always heard.
           </p>
         </div>
         <div className="rail">

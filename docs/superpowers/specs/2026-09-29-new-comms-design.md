@@ -144,14 +144,25 @@ Pack {
 PackKey {
   channelId: string
   mode: "ptt" | "latch" | "auto"   // manager-set; partyline/direct only
-  pgmListen: "always" | "toggle"   // manager-set; pgm only
-  volume: number                    // 0-100, operator-adjustable, persisted
+  volume: number                    // 0-100, operator-adjustable, persisted; ignored for pgm
 }
 ```
 
-A hardware pack has exactly one key (the channel it bridges). On a
-partyline/direct channel it is permanently keyed; on a pgm channel it is the
-feed.
+**Button limit (amended 2026-09-29).** A *button* is a key on a partyline or
+direct channel. A human pack may have at most **6 buttons**. A **pgm** channel is
+not a button: it is a listen-only *mapping* with no key, no level and no
+on/off, sent straight into the pack at full level. A pack may have any number
+of pgm mappings, and they do not count toward the 6. (This replaces the earlier
+per-key `pgmListen: "always" | "toggle"` setting and the pgm level slider.)
+
+A hardware pack has **no limit** on channels. It has one input circuit and one
+output circuit: its input is added to every channel it is on (permanently keyed
+on a partyline/direct channel, the feed on a pgm), and its output is the sum of
+the N-1 mixes of all its channels. Its keys carry no level (full level).
+
+A hardware pack's device settings include an **input trim** and **output trim**,
+each -24 to +24 dB, applied in mix-router (input trim on what the node sends
+in, output trim on what it is sent).
 
 Runtime-only state (broadcast via SSE, not stored as config):
 
@@ -162,7 +173,6 @@ PackLiveState {
   client?: string                        // e.g. "iPhone, Safari"; hardware: address
   micOff: boolean                        // pack-wide mic kill
   keyed: { [channelId]: boolean }
-  pgmOn: { [channelId]: boolean }        // only for pgmListen: "toggle"
 }
 ```
 
@@ -201,10 +211,11 @@ shows a banner saying keys are off until the connection is back.
 - **N-1 mixing**: on each channel a pack is keyed into it hears every other
   keyed member, never itself. One combined downstream track per pack.
 - **pgm**: hardware feed(s) are always contributing; listeners never
-  contribute. `pgmListen: "toggle"` only mutes the listener's own copy.
-- **Volume**: per-key `volume` is a gain on that channel's contribution to
-  the pack's personal mix; `masterVolume` is a final gain after summing.
-  No per-talker gain trim in the MVP.
+  contribute. A pgm mapping is always heard at full level (no toggle, no level).
+- **Volume**: per-key `volume` is a gain on that button's channel contribution to
+  the pack's personal mix (not applied to pgm mappings or to hardware packs);
+  `masterVolume` is a final gain after summing. Hardware trims are applied at
+  the node's input and output. No per-talker gain trim in the MVP.
 - **Latency target**: 48 kHz, 10 ms CELT-only Opus, no DTX/FEC, ICE-lite,
   WHEP-style signaling, no trickle ICE. Target **< 150 ms mic-to-ear on LAN
   WiFi**, validated with a physical impulse test as a2-monitor did.
@@ -228,7 +239,9 @@ shows a banner saying keys are off until the connection is back.
   - `{ type: "micOff", on }`
   - `{ type: "volume", channelId, volume }`
   - `{ type: "masterVolume", volume }`
-  - `{ type: "pgmListen", channelId, on }`
+  - `{ type: "ping", hidden? }`, answered with `{ type: "pong" }`. Sent once a
+    second (from a worker, so a locked phone keeps sending). Silence for ~4 s
+    ends the session; `hidden: true` (backgrounded tab) extends that to ~20 s.
   Reliable-ordered delivery is required: a lost "key off" must never leave
   a channel open. Rationale for a data channel over a second REST/WS
   connection: it rides the already-negotiated ICE/DTLS session and has no
@@ -278,9 +291,8 @@ system name ("Stage A"), the time, and a menu.
      shows their name with a small green level indication.
    - Hot (this pack keyed): the whole key turns flat red, white text, with a
      small level meter and the word "Talking" (or "Latched").
-   - pgm `always`: no control; sub text "Listen" if none set.
-   - pgm `toggle`: the key toggles the listener's own feed on/off and shows
-     "Listening" / "Off".
+   - pgm channels have **no key**. They play straight in and are listed under
+     the grid as "Also hearing: Program, Announce". At most 6 keys are shown.
    - While connecting/reconnecting or with mic off, keys are dimmed and
      inert; a banner explains why.
 3. **Levels mode**: every key swaps its content for its own volume slider
@@ -288,7 +300,19 @@ system name ("Stage A"), the time, and a menu.
    per-channel volume is edited (nothing inside a key can be tapped by
    accident while mixing).
 4. **Dock** (always visible): **Mic** button (Mic on / Mic off; off is
-   amber-filled) and the master **Volume** slider with its value.
+   amber-filled) and the master **Volume** slider with its value. With no
+   microphone it reads "No mic" and tapping it retries.
+5. **Audio devices** (menu, every screen): choose the **microphone** and, where
+   the browser allows it (not Safari), the **speaker**. Remembered per browser.
+   Changing the microphone while connected swaps the track without reconnecting.
+6. **Listening never depends on the microphone.** If the mic is blocked,
+   unplugged or suspended by the OS (locked screen), the session still joins
+   and plays the mix ("Listening only"), and the mic is re-acquired when the
+   app returns to the foreground. While playing, the page registers a media
+   session (lock-screen controls; pause is ignored), sets the platform audio
+   session to play-and-record where supported, and resumes playback if the OS
+   pauses it. Browsers, iOS especially, may still suspend a locked page; see
+   the README for what has and has not been verified.
 
 ### Manager app (React SPA, laptop)
 
@@ -307,7 +331,7 @@ mixer health/latency, and online count.
 2. **Packs**: master/detail. List grouped People / Hardware with an online
    dot and key count. Editor: inline-editable name, type, online status
    with client; for people: optional PIN toggle and starting volume; for
-   hardware: device, input and output selects. **Keys** section: a table of
+   hardware: device, input and output selects, and **input trim / output trim** sliders (-24 to +24 dB). **Keys** section: a table of
    only the channels this pack has, in order (#, channel with sub text,
    behaviour select, level, move up/down, remove), an **Add channel** button
    offering only channels not yet on the pack, and a **phone preview** on

@@ -71,28 +71,74 @@ describe("channels and pack keys stay in step", () => {
   });
 });
 
+describe("button limits", () => {
+  const many = (gateway: Gateway, count: number, type: "partyline" | "pgm" = "partyline") =>
+    Array.from({ length: count }, (_, i) => gateway.createChannel({ name: `${type} ${i}`, type }));
+
+  it("gives a person six buttons, and PGM mappings do not count", () => {
+    const { gateway } = setup();
+    const lines = many(gateway, 7);
+    const feeds = many(gateway, 20, "pgm");
+    expect(() => gateway.createPack({ name: "A", keys: lines.map((c) => ({ channelId: c.id })) })).toThrow(/at most 6 buttons/);
+    const pack = gateway.createPack({ name: "A", keys: lines.slice(0, 6).map((c) => ({ channelId: c.id })) });
+    // twenty PGM mappings still fit
+    gateway.updatePack(pack.id, { keys: [...lines.slice(0, 6), ...feeds].map((c) => ({ channelId: c.id })) });
+    expect(pack.keys).toHaveLength(26);
+    // a seventh button does not, whichever way it is added, and nothing is half-applied
+    expect(() => gateway.updateChannel(lines[6]!.id, { members: [pack.id] })).toThrow(/at most 6 buttons/);
+    expect(pack.keys.some((k) => k.channelId === lines[6]!.id)).toBe(false);
+    expect(lines[6]!.members).toEqual([]);
+  });
+
+  it("refuses to turn a PGM into a partyline if that would give someone a seventh button", () => {
+    const { gateway } = setup();
+    const lines = many(gateway, 6);
+    const [feed] = many(gateway, 1, "pgm");
+    const pack = gateway.createPack({ name: "A", keys: [...lines, feed!].map((c) => ({ channelId: c.id })) });
+    expect(() => gateway.updateChannel(feed!.id, { type: "partyline" })).toThrow(/at most 6 buttons/);
+    expect(feed!.type).toBe("pgm");
+    gateway.updatePack(pack.id, { keys: lines.slice(0, 5).concat(feed!).map((c) => ({ channelId: c.id })) });
+    expect(() => gateway.updateChannel(feed!.id, { type: "partyline" })).not.toThrow();
+  });
+
+  it("leaves hardware nodes unlimited", () => {
+    const { gateway } = setup();
+    const lines = many(gateway, 12);
+    const node = gateway.createPack({ name: "Rack", type: "hardware", keys: lines.map((c) => ({ channelId: c.id })) });
+    expect(node.keys).toHaveLength(12);
+  });
+});
+
 describe("hardware packs", () => {
-  it("bridge one channel, can be made ahead of time and are claimed by a node of the same name", () => {
+  it("can be made ahead of time and are claimed by a node of the same name, keeping every channel", () => {
     const { gateway } = setup();
     const a = gateway.createChannel({ name: "A" });
     const b = gateway.createChannel({ name: "B" });
-    expect(() => gateway.createPack({ name: "Rack", type: "hardware", keys: [{ channelId: a.id }, { channelId: b.id }] })).toThrow(/one channel/);
-    const rack = gateway.createPack({ name: "Stage rack", type: "hardware", keys: [{ channelId: a.id }] });
-    expect(() => gateway.updateChannel(b.id, { members: [rack.id] })).toThrow(/already bridges/);
+    const rack = gateway.createPack({ name: "Stage rack", type: "hardware", keys: [{ channelId: a.id }, { channelId: b.id }] });
     const claimed = gateway.registerNode({ deviceName: "stage RACK", availableInputs: ["In 1"], availableOutputs: ["Out 1"], address: "10.0.0.5" });
     expect(claimed.id).toBe(rack.id);
-    expect(claimed.keys).toHaveLength(1);
+    expect(claimed.keys).toHaveLength(2);
     expect(() => gateway.updatePack(rack.id, { type: "human" })).toThrow(/registered node/);
   });
 
-  it("lets a person become hardware before a node exists, keeping one key and dropping the PIN", () => {
+  it("stores input and output trim within plus or minus 24 dB", () => {
+    const { gateway } = setup();
+    const node = gateway.registerNode({ deviceName: "Rack", availableInputs: ["In 1"], availableOutputs: ["Out 1"], address: "10.0.0.5" });
+    gateway.updatePack(node.id, { device: { inputTrim: 6.5, outputTrim: -24 } });
+    expect(node.device).toMatchObject({ inputTrim: 6.5, outputTrim: -24 });
+    expect(() => gateway.updatePack(node.id, { device: { inputTrim: 24.5 } })).toThrow(/inputTrim/);
+    expect(() => gateway.updatePack(node.id, { device: { outputTrim: -25 } })).toThrow(/outputTrim/);
+    expect(node.device).toMatchObject({ inputTrim: 6.5, outputTrim: -24 });
+  });
+
+  it("lets a person become hardware before a node exists, dropping the PIN", () => {
     const { gateway } = setup();
     const a = gateway.createChannel({ name: "A" });
     const b = gateway.createChannel({ name: "B" });
     const pack = gateway.createPack({ name: "X", pin: "1234", keys: [{ channelId: a.id }, { channelId: b.id }] });
     gateway.updatePack(pack.id, { type: "hardware" });
     expect(pack.type).toBe("hardware");
-    expect(pack.keys).toHaveLength(1);
+    expect(pack.keys).toHaveLength(2);
     expect(pack.pin).toBeUndefined();
   });
 });
@@ -127,7 +173,6 @@ describe("live state from the mixer", () => {
       packId: pack.id,
       keyed: { [channel.id]: true },
       micOff: false,
-      pgmOn: {},
       volumes: { [channel.id]: 55 },
       masterVolume: 40,
     });

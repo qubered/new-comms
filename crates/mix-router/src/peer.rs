@@ -24,6 +24,8 @@ const MAX_DECODE: usize = 5_760; // 120 ms
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// A phone that has opened its data channel pings every second; this much silence means it is gone.
 const DEAD_AFTER: Duration = Duration::from_secs(4);
+/// A hidden tab (locked screen) is throttled by the browser, so it gets much longer.
+const DEAD_AFTER_HIDDEN: Duration = Duration::from_secs(20);
 /// Start playing once this much is queued, and stop below one frame.
 const PRIME_SAMPLES: usize = FRAME * 2;
 /// Above this, the sender has bunched up; trim to `TRIM_TO` to bound latency.
@@ -53,6 +55,7 @@ pub struct Peer {
     primed: bool,
     channel: Option<ChannelId>,
     last_message: Instant,
+    background: bool,
     outbound: VecDeque<String>,
     pub connected: bool,
     closed: Option<&'static str>,
@@ -140,6 +143,7 @@ impl Peer {
                 primed: false,
                 channel: None,
                 last_message: now,
+                background: false,
                 outbound: VecDeque::new(),
                 connected: false,
                 closed: None,
@@ -195,7 +199,7 @@ impl Peer {
         }
         if self.connected
             && self.channel.is_some()
-            && now.saturating_duration_since(self.last_message) > DEAD_AFTER
+            && now.saturating_duration_since(self.last_message) > if self.background { DEAD_AFTER_HIDDEN } else { DEAD_AFTER }
         {
             self.close("timeout");
             return;
@@ -301,7 +305,10 @@ impl Peer {
                     Event::ChannelData(data) if !data.binary => {
                         self.last_message = Instant::now();
                         match serde_json::from_slice::<PeerMessage>(&data.data) {
-                            Ok(PeerMessage::Ping) => self.send_json(r#"{"type":"pong"}"#.to_owned()),
+                            Ok(PeerMessage::Ping { hidden }) => {
+                                self.background = hidden;
+                                self.send_json(r#"{"type":"pong"}"#.to_owned());
+                            }
                             Ok(message) => events.push(PeerEvent::Message(message)),
                             Err(_) => {}
                         }

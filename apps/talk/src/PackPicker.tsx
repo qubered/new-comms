@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { Channel, PublicPack } from "@comms/protocol";
+import { AudioDevices } from "./AudioDevices.tsx";
 import { TopBar } from "./TopBar.tsx";
 
 export function PackPicker({
@@ -20,16 +22,19 @@ export function PackPicker({
   const people = packs.filter((pack) => pack.type === "human");
   const hardware = packs.filter((pack) => pack.type === "hardware");
   const status = !loaded ? "Connecting…" : online ? name : "Reconnecting…";
+  const [audioOpen, setAudioOpen] = useState(false);
   return (
     <section className="screen on">
       <TopBar
         tone={online && loaded ? "" : "wait"}
         text={status}
         items={[
+          { label: "Audio devices", onClick: () => setAudioOpen(true) },
           { label: "Reload", onClick: () => location.reload() },
           { label: "Latency test", onClick: () => (location.hash = "#latency") },
         ]}
       />
+      <AudioDevices open={audioOpen} onClose={() => setAudioOpen(false)} />
       <div className="packrow">
         <span className="name">Choose your pack</span>
       </div>

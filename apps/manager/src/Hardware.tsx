@@ -1,6 +1,6 @@
 import type { Channel, PackLiveState, PublicPack } from "@comms/protocol";
 import { api } from "./api.ts";
-import { Head, relativeTime, typeClass } from "./common.tsx";
+import { Head, TrimControl, relativeTime, typeClass } from "./common.tsx";
 
 export function Hardware({
   packs,
@@ -25,8 +25,7 @@ export function Hardware({
       <div className="cards">
         {nodes.map((pack) => {
           const online = Boolean(live[pack.id]?.connected);
-          const key = pack.keys[0];
-          const channel = key && channels.find((c) => c.id === key.channelId);
+          const mapped = pack.keys.map((key) => channels.find((c) => c.id === key.channelId)).filter((c): c is Channel => Boolean(c));
           const select = (field: "input" | "output") => (
             <select className="sel" aria-label={field === "input" ? "Input" : "Output"} value={pack.device?.[field] ?? ""} onChange={(e) => void set(pack, field, e.target.value)}>
               {((field === "input" ? pack.device?.inputs : pack.device?.outputs) ?? []).map((name) => (
@@ -53,17 +52,33 @@ export function Hardware({
                 {select("input")}
                 <span>Output</span>
                 {select("output")}
-                <span>Channel</span>
-                <span>
-                  {channel ? (
-                    <>
-                      <span className={`sw ${typeClass(channel.type)}`} />
-                      {channel.name} <span className="dim">{channel.type === "pgm" ? "feed" : "always keyed"}</span>
-                    </>
+                <span>Input trim</span>
+                <TrimControl
+                  label="Input trim"
+                  value={pack.device?.inputTrim}
+                  disabled={!pack.device}
+                  onCommit={(inputTrim) => void api.updatePack(pack.id, { device: { inputTrim } }).catch((error: Error) => onError(error.message))}
+                />
+                <span>Output trim</span>
+                <TrimControl
+                  label="Output trim"
+                  value={pack.device?.outputTrim}
+                  disabled={!pack.device}
+                  onCommit={(outputTrim) => void api.updatePack(pack.id, { device: { outputTrim } }).catch((error: Error) => onError(error.message))}
+                />
+                <span>Channels</span>
+                <div>
+                  {mapped.length ? (
+                    mapped.map((channel) => (
+                      <div key={channel.id}>
+                        <i className={`sw ${typeClass(channel.type)}`} />
+                        {channel.name} <i className="dim" style={{ fontStyle: "normal" }}>{channel.type === "pgm" ? "feed" : "always keyed"}</i>
+                      </div>
+                    ))
                   ) : (
-                    <span className="dim">Not assigned</span>
+                    <i className="dim" style={{ fontStyle: "normal" }}>Not assigned</i>
                   )}
-                </span>
+                </div>
               </div>
               <div>
                 <button className="btn" onClick={() => onOpen(pack.id)}>

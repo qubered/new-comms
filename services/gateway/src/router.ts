@@ -7,7 +7,6 @@ export interface RouterPackState {
   packId: string;
   keyed: Record<string, boolean>;
   micOff: boolean;
-  pgmOn: Record<string, boolean>;
   volumes: Record<string, number>;
   masterVolume: number;
 }
@@ -50,6 +49,8 @@ export class MixRouter extends EventEmitter {
     socket.on("connect", () => {
       this.warned = false;
       console.log(`connected to mix-router at ${this.address}`);
+      // Claim the control link: mix-router ignores connections that never send a valid command.
+      socket.write(JSON.stringify({ cmd: "hello" }) + "\n");
     });
     const lines = createInterface({ input: socket });
     lines.on("error", () => {}); // socket errors are handled below; readline re-emits them
@@ -116,8 +117,10 @@ export class MixRouter extends EventEmitter {
         id,
         type,
         masterVolume,
-        device: device ? { input: device.input ?? null, output: device.output ?? null } : undefined,
-        keys: keys.map(({ channelId, volume, pgmListen }) => ({ channelId, volume, pgmListen })),
+        device: device
+          ? { input: device.input ?? null, output: device.output ?? null, inputTrim: device.inputTrim ?? 0, outputTrim: device.outputTrim ?? 0 }
+          : undefined,
+        keys: keys.map(({ channelId, volume }) => ({ channelId, volume })),
       })),
     });
     this.lastConfig = line;

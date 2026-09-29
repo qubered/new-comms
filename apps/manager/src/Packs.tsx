@@ -1,7 +1,21 @@
 import { useState } from "react";
-import type { Channel, KeyMode, PackKey, PackLiveState, PgmListen, PublicPack } from "@comms/protocol";
+import { MAX_BUTTONS } from "@comms/protocol";
+import type { Channel, KeyMode, PackKey, PackLiveState, PublicPack } from "@comms/protocol";
 import { api } from "./api.ts";
-import { DraftInput, Head, MODE_LABEL, PhonePreview, Switch, TYPE_LABEL, defaultKeyFor, relativeTime, typeClass } from "./common.tsx";
+import {
+  DraftInput,
+  Head,
+  MODE_LABEL,
+  PhonePreview,
+  Switch,
+  TYPE_LABEL,
+  TrimControl,
+  buttonCount,
+  defaultKeyFor,
+  isButton,
+  relativeTime,
+  typeClass,
+} from "./common.tsx";
 
 export function Packs({
   packs,
@@ -125,9 +139,22 @@ function Editor({
   const saveKeys = (keys: PackKey[]) => guard(api.updatePack(pack.id, { keys }));
   const patchKey = (channelId: string, patch: Partial<PackKey>) =>
     saveKeys(pack.keys.map((key) => (key.channelId === channelId ? { ...key, ...patch } : key)));
-  const move = (index: number, by: number) => {
+
+  // A person's phone has six buttons; PGM mappings play straight in and are not buttons. A node has neither limit.
+  const used = buttonCount(pack, channels);
+  const full = !hardware && used >= MAX_BUTTONS;
+  const groups: { title?: string; rows: typeof assigned }[] = hardware
+    ? [{ rows: assigned }]
+    : [
+        { title: "Buttons", rows: assigned.filter(({ key }) => isButton(key, channels)) },
+        { title: "Listening only (PGM)", rows: assigned.filter(({ key }) => !isButton(key, channels)) },
+      ].filter((group) => group.rows.length > 0);
+  /** Swap a row with its neighbour inside its own group. */
+  const move = (rows: typeof assigned, index: number, by: number) => {
+    const a = pack.keys.findIndex((key) => key.channelId === rows[index]!.key.channelId);
+    const b = pack.keys.findIndex((key) => key.channelId === rows[index + by]!.key.channelId);
     const keys = [...pack.keys];
-    [keys[index], keys[index + by]] = [keys[index + by]!, keys[index]!];
+    [keys[a], keys[b]] = [keys[b]!, keys[a]!];
     void saveKeys(keys);
   };
 
@@ -186,6 +213,26 @@ function Editor({
               <DeviceSelect pack={pack} field="output" guard={guard} />
               <div className="help">Where the channel mix comes out.</div>
             </div>
+            <div className="field">
+              <label>Input trim</label>
+              <TrimControl
+                label="Input trim"
+                value={pack.device?.inputTrim}
+                disabled={!pack.device}
+                onCommit={(inputTrim) => void guard(api.updatePack(pack.id, { device: { inputTrim } }))}
+              />
+              <div className="help">Gain on what the node sends in, −24 to +24 dB.</div>
+            </div>
+            <div className="field">
+              <label>Output trim</label>
+              <TrimControl
+                label="Output trim"
+                value={pack.device?.outputTrim}
+                disabled={!pack.device}
+                onCommit={(outputTrim) => void guard(api.updatePack(pack.id, { device: { outputTrim } }))}
+              />
+              <div className="help">Gain on what the node is sent, −24 to +24 dB.</div>
+            </div>
           </div>
         </section>
       ) : (
@@ -220,115 +267,128 @@ function Editor({
         <div className="keys-wrap">
           <div>
             {assigned.length ? (
-              <div style={{ overflowX: "auto" }}>
-                <table className="tbl">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 28 }}>#</th>
-                      <th>Channel</th>
-                      <th>{hardware ? "Role" : "Key"}</th>
-                      <th>Level</th>
-                      <th style={{ width: 96 }} />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assigned.map(({ key, channel }, i) => (
-                      <tr key={key.channelId}>
-                        <td className="dim num">{i + 1}</td>
-                        <td className="chn">
-                          <span className={`sw ${typeClass(channel.type)}`} />
-                          {channel.name}
-                          {channel.subText && <small>{channel.subText}</small>}
-                        </td>
-                        <td>
-                          {hardware ? (
-                            <span className={`cell${channel.type === "pgm" ? " src" : ""}`}>{channel.type === "pgm" ? "Feed" : "Always keyed"}</span>
-                          ) : channel.type === "pgm" ? (
-                            <select
-                              className="sel"
-                              aria-label={`${channel.name} listen`}
-                              value={key.pgmListen}
-                              onChange={(e) => void patchKey(key.channelId, { pgmListen: e.target.value as PgmListen })}
-                            >
-                              <option value="always">Always on</option>
-                              <option value="toggle">Can turn off</option>
-                            </select>
-                          ) : (
-                            <select
-                              className="sel"
-                              aria-label={`${channel.name} key`}
-                              value={key.mode}
-                              onChange={(e) => void patchKey(key.channelId, { mode: e.target.value as KeyMode })}
-                            >
-                              {(Object.keys(MODE_LABEL) as KeyMode[]).map((mode) => (
-                                <option key={mode} value={mode}>
-                                  {MODE_LABEL[mode]}
-                                </option>
-                              ))}
-                            </select>
+              <div style={{ overflowX: "auto", display: "flex", flexDirection: "column", gap: 18 }}>
+                {groups.map((group) => (
+                  <table className="tbl" key={group.title ?? "all"}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: 28 }}>#</th>
+                        <th>
+                          {group.title ?? "Channel"}
+                          {group.title === "Buttons" && (
+                            <span className={`count${full ? " full" : ""}`}>
+                              {"  "}
+                              {used} of {MAX_BUTTONS}
+                            </span>
                           )}
-                        </td>
-                        <td>
-                          {hardware ? (
-                            <span className="dim">–</span>
-                          ) : (
-                            <DraftInput
-                              className="in num num-in"
-                              inputMode="numeric"
-                              aria-label={`${channel.name} level`}
-                              value={String(Math.round(key.volume))}
-                              onCommit={(value) => void patchKey(key.channelId, { volume: Math.min(100, Math.max(0, Number(value) || 0)) })}
-                            />
-                          )}
-                        </td>
-                        <td className="rowact">
-                          <button aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}>
-                            ↑
-                          </button>
-                          <button aria-label="Move down" disabled={i === assigned.length - 1} onClick={() => move(i, 1)}>
-                            ↓
-                          </button>
-                          <button aria-label="Remove" onClick={() => void saveKeys(pack.keys.filter((k) => k.channelId !== key.channelId))}>
-                            ×
-                          </button>
-                        </td>
+                        </th>
+                        <th>{hardware ? "Role" : group.title === "Buttons" ? "Key" : ""}</th>
+                        <th>{group.title === "Buttons" ? "Level" : ""}</th>
+                        <th style={{ width: 96 }} />
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {group.rows.map(({ key, channel }, i) => {
+                        const feed = channel.type === "pgm";
+                        return (
+                          <tr key={key.channelId}>
+                            <td className="dim num">{i + 1}</td>
+                            <td className="chn">
+                              <span className={`sw ${typeClass(channel.type)}`} />
+                              {channel.name}
+                              {channel.subText && <small>{channel.subText}</small>}
+                            </td>
+                            <td>
+                              {hardware ? (
+                                <span className={`cell${feed ? " src" : ""}`}>{feed ? "Feed" : "Always keyed"}</span>
+                              ) : feed ? (
+                                <span className="cell src">Listens</span>
+                              ) : (
+                                <select
+                                  className="sel"
+                                  aria-label={`${channel.name} key`}
+                                  value={key.mode}
+                                  onChange={(e) => void patchKey(key.channelId, { mode: e.target.value as KeyMode })}
+                                >
+                                  {(Object.keys(MODE_LABEL) as KeyMode[]).map((mode) => (
+                                    <option key={mode} value={mode}>
+                                      {MODE_LABEL[mode]}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </td>
+                            <td>
+                              {hardware || feed ? (
+                                <span className="dim">–</span>
+                              ) : (
+                                <DraftInput
+                                  className="in num num-in"
+                                  inputMode="numeric"
+                                  aria-label={`${channel.name} level`}
+                                  value={String(Math.round(key.volume))}
+                                  onCommit={(value) => void patchKey(key.channelId, { volume: Math.min(100, Math.max(0, Number(value) || 0)) })}
+                                />
+                              )}
+                            </td>
+                            <td className="rowact">
+                              <button aria-label="Move up" disabled={i === 0} onClick={() => move(group.rows, i, -1)}>
+                                ↑
+                              </button>
+                              <button aria-label="Move down" disabled={i === group.rows.length - 1} onClick={() => move(group.rows, i, 1)}>
+                                ↓
+                              </button>
+                              <button aria-label="Remove" onClick={() => void saveKeys(pack.keys.filter((k) => k.channelId !== key.channelId))}>
+                                ×
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ))}
               </div>
             ) : (
               <p className="empty">No keys yet. Add a channel and it appears on {hardware ? "this node" : "their phone"}.</p>
             )}
             <div className="addrow" style={{ marginTop: 12 }}>
-              <button className="btn" disabled={!available.length || (hardware && assigned.length > 0)} onClick={() => setAdding(!adding)}>
+              <button className="btn" disabled={!available.length} onClick={() => setAdding(!adding)}>
                 Add channel
               </button>
               {adding && available.length > 0 && (
                 <div className="addmenu">
-                  {available.map((channel) => (
-                    <button
-                      key={channel.id}
-                      onClick={() => {
-                        setAdding(false);
-                        void saveKeys([...pack.keys, defaultKeyFor(channel)]);
-                      }}
-                    >
-                      <span className={`sw ${typeClass(channel.type)}`} />
-                      {channel.name}
-                      <span className="dim">
-                        &nbsp;{TYPE_LABEL[channel.type]}
-                        {channel.subText ? `, ${channel.subText}` : ""}
-                      </span>
-                    </button>
-                  ))}
+                  {available.map((channel) => {
+                    const blocked = full && channel.type !== "pgm";
+                    return (
+                      <button
+                        key={channel.id}
+                        disabled={blocked}
+                        title={blocked ? `All ${MAX_BUTTONS} buttons are used. PGM channels are not limited.` : undefined}
+                        style={blocked ? { opacity: 0.4 } : undefined}
+                        onClick={() => {
+                          setAdding(false);
+                          void saveKeys([...pack.keys, defaultKeyFor(channel)]);
+                        }}
+                      >
+                        <span className={`sw ${typeClass(channel.type)}`} />
+                        {channel.name}
+                        <span className="dim">
+                          &nbsp;{TYPE_LABEL[channel.type]}
+                          {channel.subText ? `, ${channel.subText}` : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
-              {hardware && assigned.length > 0 ? (
-                <span className="dim">A node bridges one channel.</span>
-              ) : (
-                available.length === 0 && <span className="dim">This pack has every channel.</span>
-              )}
+              {available.length === 0 ? (
+                <span className="dim">This pack has every channel.</span>
+              ) : full ? (
+                <span className="dim">All {MAX_BUTTONS} buttons are used. PGM channels can still be added.</span>
+              ) : hardware ? (
+                <span className="dim">A node can be on any number of channels.</span>
+              ) : null}
             </div>
           </div>
           <PhonePreview pack={pack} packs={packs} channels={channels} keyed={state?.keyed ?? {}} systemName={systemName} />

@@ -191,5 +191,13 @@ section.blk>h3{margin:0;font-size:14px;font-weight:600;color:var(--fg-2)}
 .name-in.new{border-bottom-color:var(--pl)}
 .cell.btn-cell{cursor:default}
 select.sel option{background:var(--surface);color:var(--fg)}
+.trim{display:flex;align-items:center;gap:10px}
+.trim input[type=range]{-webkit-appearance:none;appearance:none;flex:1;min-width:120px;height:28px;background:transparent;margin:0}
+.trim input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--line-2) 50%,var(--line-2) 50%)}
+.trim input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--fg);margin-top:-7px;border:0}
+.trim input[type=range]:disabled{opacity:.4}
+.trim-v{min-width:64px;text-align:right}
+.count{color:var(--fg-3);font-size:13px}
+.count.full{color:var(--warn)}
 .err-banner{background:#3a1216;color:#FFB3B8;border-radius:8px;padding:9px 12px;font-size:14px}
 .offline-note{background:#3d2d10;color:#FFC96B;border-radius:8px;padding:9px 12px;font-size:14px}

@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use crate::control::{
-    ChannelConfig, ChannelType, PackConfig, PackState, PackType, PeerMessage, PgmListen,
+    ChannelConfig, ChannelType, PackConfig, PackState, PackType, PeerMessage,
 };
 use crate::peer::FRAME;
 
@@ -18,7 +18,6 @@ pub struct Pack {
     pub keyed: HashMap<String, bool>,
     pub mic_off: bool,
     pub loopback: bool,
-    pub pgm_on: HashMap<String, bool>,
     pub volumes: HashMap<String, f32>,
     pub master_volume: f32,
 }
@@ -29,7 +28,6 @@ impl Pack {
             keyed: HashMap::new(),
             mic_off: false,
             loopback: false,
-            pgm_on: HashMap::new(),
             volumes: HashMap::new(),
             master_volume: config.master_volume,
             config,
@@ -48,12 +46,16 @@ impl Pack {
             .collect();
     }
 
+    /// Linear gain of a hardware node's output trim (what it is sent).
+    fn output_gain(&self) -> f32 {
+        self.config.device.as_ref().map_or(1.0, |d| db_to_gain(d.output_trim))
+    }
+
     pub fn state(&self) -> PackState {
         PackState {
             pack_id: self.config.id.clone(),
             keyed: self.keyed.clone(),
             mic_off: self.mic_off,
-            pgm_on: self.pgm_on.clone(),
             volumes: self.volumes.clone(),
             master_volume: self.master_volume,
         }
@@ -67,7 +69,7 @@ pub struct Mixer {
 }
 
 impl Mixer {
-    /// Replace the configuration, keeping live keyed / mic / pgm state where it still applies.
+    /// Replace the configuration, keeping live keyed / mic state where it still applies.
     pub fn configure(&mut self, channels: Vec<ChannelConfig>, packs: Vec<PackConfig>) {
         self.channels = channels
             .into_iter()
@@ -91,13 +93,6 @@ impl Mixer {
                 .map(|(id, on)| (id.clone(), *on))
                 .collect();
             pack.keyed = keyed;
-            let pgm_on: HashMap<_, _> = pack
-                .pgm_on
-                .iter()
-                .filter(|(id, _)| has_key(id))
-                .map(|(id, on)| (id.clone(), *on))
-                .collect();
-            pack.pgm_on = pgm_on;
             next.insert(pack.config.id.clone(), pack);
         }
         self.packs = next;
@@ -105,6 +100,14 @@ impl Mixer {
 
     pub fn pack(&self, id: &str) -> Option<&Pack> {
         self.packs.get(id)
+    }
+
+    /// Linear gain of a hardware node's input trim (what it sends in).
+    pub fn input_gain(&self, id: &str) -> f32 {
+        self.packs
+            .get(id)
+            .and_then(|pack| pack.config.device.as_ref())
+            .map_or(1.0, |device| db_to_gain(device.input_trim))
     }
 
     pub fn is_hardware(&self, id: &str) -> bool {
@@ -123,7 +126,7 @@ impl Mixer {
 
     /// Applies a data-channel message. Returns the new state when something changed.
     pub fn apply(&mut self, id: &str, message: PeerMessage) -> Option<PackState> {
-        if matches!(message, PeerMessage::Ping) {
+        if matches!(message, PeerMessage::Ping { .. }) {
             return None;
         }
         let channels = &self.channels;
@@ -157,17 +160,10 @@ impl Mixer {
                 pack.volumes.insert(channel_id, volume.clamp(0.0, 100.0));
             }
             PeerMessage::MasterVolume { volume } => pack.master_volume = volume.clamp(0.0, 100.0),
-            PeerMessage::Ping => return None,
+            PeerMessage::Ping { .. } => return None,
             PeerMessage::Loopback { on } => {
                 pack.loopback = on;
                 return None;
-            }
-            PeerMessage::PgmListen { channel_id, on } => {
-                let toggle = key(&channel_id).is_some_and(|k| k.pgm_listen == PgmListen::Toggle);
-                if !toggle {
-                    return None;
-                }
-                pack.pgm_on.insert(channel_id, on);
             }
         }
         Some(pack.state())
@@ -213,13 +209,12 @@ impl Mixer {
             let Some(channel) = self.channels.get(&key.channel_id) else {
                 continue;
             };
-            if channel.kind == ChannelType::Pgm
-                && key.pgm_listen == PgmListen::Toggle
-                && !pack.pgm_on.get(&channel.id).copied().unwrap_or(true)
-            {
-                continue;
-            }
-            let gain = pack.volumes.get(&channel.id).copied().unwrap_or(key.volume) / 100.0;
+            // PGM and hardware packs have no level control: they hear everything at full level.
+            let gain = if channel.kind == ChannelType::Pgm || pack.config.kind == PackType::Hardware {
+                1.0
+            } else {
+                pack.volumes.get(&channel.id).copied().unwrap_or(key.volume) / 100.0
+            };
             if gain <= 0.0 {
                 continue;
             }
@@ -241,11 +236,15 @@ impl Mixer {
                 }
             }
         }
-        let master = pack.master_volume / 100.0;
+        let master = pack.master_volume / 100.0 * pack.output_gain();
         for sample in out.iter_mut() {
             *sample = soft_clip(*sample * master);
         }
     }
+}
+
+pub fn db_to_gain(db: f32) -> f32 {
+    10.0_f32.powf(db.clamp(-24.0, 24.0) / 20.0)
 }
 
 /// Transparent below about 0.7, then a smooth knee toward +/-1 so a crowd never wraps.
@@ -269,7 +268,6 @@ mod tests {
         KeyConfig {
             channel_id: channel.into(),
             volume: 100.0,
-            pgm_listen: PgmListen::Always,
         }
     }
 
@@ -378,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn volumes_and_pgm_toggle_shape_the_personal_mix() {
+    fn master_volume_scales_the_personal_mix() {
         let mut mixer = setup();
         press(&mut mixer, "b", "prod", true);
         mixer.apply(
@@ -397,5 +395,64 @@ mod tests {
         press(&mut mixer, "b", "prod", true);
         let state = mixer.release("b").unwrap();
         assert!(state.keyed.is_empty());
+    }
+
+    #[test]
+    fn pgm_and_hardware_ignore_key_levels_and_trims_apply_at_the_node() {
+        use crate::control::DeviceConfig;
+        let mut mixer = Mixer::default();
+        let mut node = pack("rack", PackType::Hardware, &["prod", "pgm"]);
+        node.device = Some(DeviceConfig { input: None, output: None, input_trim: 6.0, output_trim: -6.0 });
+        let mut person = pack("p", PackType::Human, &["prod", "pgm"]);
+        person.keys[0].volume = 50.0;
+        person.keys[1].volume = 0.0; // a pgm mapping has no level: this must be ignored
+        mixer.configure(
+            vec![
+                ChannelConfig { id: "prod".into(), kind: ChannelType::Partyline, members: vec!["p".into(), "rack".into()] },
+                ChannelConfig { id: "pgm".into(), kind: ChannelType::Pgm, members: vec!["rack".into(), "p".into()] },
+            ],
+            vec![person, node],
+        );
+        let f = frames(&[("rack", 0.1)]);
+        let mut out = [0.0; FRAME];
+        // The person hears the node on prod at 50% and on pgm at full: 0.05 + 0.1.
+        mixer.mix_for("p", &f, &mut out);
+        assert!((out[0] - 0.15).abs() < 1e-6, "{}", out[0]);
+        // The node hears the person's keyed mic at full level (no key level), then output trim -6 dB.
+        press(&mut mixer, "p", "prod", true);
+        let f = frames(&[("p", 0.2)]);
+        mixer.mix_for("rack", &f, &mut out);
+        assert!((out[0] - 0.2 * db_to_gain(-6.0)).abs() < 1e-5, "{}", out[0]);
+        assert!((mixer.input_gain("rack") - db_to_gain(6.0)).abs() < 1e-6);
+        assert_eq!(mixer.input_gain("p"), 1.0);
+        assert!((db_to_gain(24.0) - 15.848).abs() < 0.01 && (db_to_gain(-24.0) - 0.0631).abs() < 0.001);
+        assert_eq!(db_to_gain(60.0), db_to_gain(24.0), "trim is clamped to +/-24 dB");
+    }
+
+    #[test]
+    fn a_node_can_sit_on_many_channels_and_hears_each_of_them() {
+        let mut mixer = Mixer::default();
+        let members = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let channels = ["a", "b", "c", "d"];
+        mixer.configure(
+            channels
+                .iter()
+                .map(|id| ChannelConfig { id: (*id).into(), kind: ChannelType::Partyline, members: members(&["node", &format!("p_{id}")]) })
+                .collect(),
+            std::iter::once(pack("node", PackType::Hardware, &channels))
+                .chain(channels.iter().map(|id| pack(&format!("p_{id}"), PackType::Human, &[id])))
+                .collect(),
+        );
+        for id in channels {
+            press(&mut mixer, &format!("p_{id}"), id, true);
+        }
+        let f = frames(&[("p_a", 0.1), ("p_b", 0.1), ("p_c", 0.1), ("p_d", 0.1)]);
+        let mut out = [0.0; FRAME];
+        mixer.mix_for("node", &f, &mut out);
+        assert!((out[0] - 0.4).abs() < 1e-6);
+        // and a person on one channel hears the node's circuit once
+        let f = frames(&[("node", 0.1)]);
+        mixer.mix_for("p_a", &f, &mut out);
+        assert!((out[0] - 0.1).abs() < 1e-6);
     }
 }

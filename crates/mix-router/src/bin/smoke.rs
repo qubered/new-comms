@@ -153,7 +153,19 @@ fn main() {
     });
     let read = || -> serde_json::Value { ev_rx.recv().unwrap() };
 
+    send(serde_json::json!({ "cmd": "hello" }));
     assert_eq!(read()["event"], "ready");
+
+    // A stray connection (a browser, a port scan) must not take the control link from us.
+    {
+        use std::io::Read;
+        let mut stray = std::net::TcpStream::connect(&control).expect("stray connect");
+        stray.write_all(b"GET / HTTP/1.1\\r\\nHost: x\\r\\n\\r\\n").unwrap();
+        stray.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let mut sink = [0u8; 16];
+        // The router closes it without answering.
+        assert!(matches!(stray.read(&mut sink), Ok(0) | Err(_)), "router answered a stray connection");
+    }
     let key = |c: &str| serde_json::json!({"channelId": c, "volume": 100, "pgmListen": "always"});
     send(serde_json::json!({
         "cmd": "config",

@@ -22,13 +22,6 @@ pub enum PackType {
     Hardware,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum PgmListen {
-    Always,
-    Toggle,
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct ChannelConfig {
     pub id: String,
@@ -42,18 +35,19 @@ pub struct ChannelConfig {
 pub struct KeyConfig {
     pub channel_id: String,
     pub volume: f32,
-    #[serde(default = "default_pgm_listen")]
-    pub pgm_listen: PgmListen,
-}
-
-fn default_pgm_listen() -> PgmListen {
-    PgmListen::Always
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceConfig {
     pub input: Option<String>,
     pub output: Option<String>,
+    /// dB, -24 to +24, applied to what the node sends in.
+    #[serde(default)]
+    pub input_trim: f32,
+    /// dB, -24 to +24, applied to what the node is sent.
+    #[serde(default)]
+    pub output_trim: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -72,6 +66,8 @@ pub struct PackConfig {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "camelCase")]
 pub enum Command {
+    /// The first line a gateway sends: it claims the control link.
+    Hello,
     #[serde(rename_all = "camelCase")]
     Config {
         channels: Vec<ChannelConfig>,
@@ -98,12 +94,14 @@ pub enum PeerMessage {
     #[serde(rename_all = "camelCase")]
     Volume { channel_id: String, volume: f32 },
     MasterVolume { volume: f32 },
-    #[serde(rename_all = "camelCase")]
-    PgmListen { channel_id: String, on: bool },
     /// Test tool: hear your own mic through the mixer (round-trip latency measurement).
     Loopback { on: bool },
-    /// Heartbeat: answered with `pong`; silence from a phone for a few seconds ends its session.
-    Ping,
+    /// Heartbeat: answered with `pong`; silence from a phone for a few seconds ends its session
+    /// (longer while `hidden`, when the browser throttles a locked or backgrounded tab).
+    Ping {
+        #[serde(default)]
+        hidden: bool,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -112,7 +110,6 @@ pub struct PackState {
     pub pack_id: String,
     pub keyed: HashMap<String, bool>,
     pub mic_off: bool,
-    pub pgm_on: HashMap<String, bool>,
     pub volumes: HashMap<String, f32>,
     pub master_volume: f32,
 }

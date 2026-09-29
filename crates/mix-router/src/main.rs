@@ -125,6 +125,7 @@ struct Router {
 impl Router {
     fn handle_command(&mut self, command: Command, now: Instant) {
         match command {
+            Command::Hello => {}
             Command::Config { channels, packs } => {
                 self.mixer.configure(channels, packs);
                 // Push fresh state so every phone sees the volumes the Manager set.
@@ -234,7 +235,6 @@ impl Router {
                     "type": "state",
                     "keyed": state.keyed,
                     "micOff": state.mic_off,
-                    "pgmOn": state.pgm_on,
                     "volumes": state.volumes,
                     "masterVolume": state.master_volume,
                 })) {
@@ -313,6 +313,12 @@ impl Router {
             }
             let mut frame = [0.0_f32; FRAME];
             if peer.take_frame(&mut frame) {
+                let trim = self.mixer.input_gain(&peer.pack_id);
+                if trim != 1.0 {
+                    for sample in frame.iter_mut() {
+                        *sample *= trim;
+                    }
+                }
                 let peak = frame.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
                 if self.mixer.is_talking(&peer.pack_id) || self.mixer.is_hardware(&peer.pack_id) {
                     let slot = self.peaks.entry(peer.pack_id.clone()).or_insert(0.0);
@@ -397,22 +403,41 @@ fn main() {
                     let id = generation;
                     let _ = stream.set_nodelay(true);
                     let Ok(writer) = stream.try_clone() else { continue };
-                    if inputs.send(Input::ControlOpened(id, writer)).is_err() {
-                        return;
-                    }
                     let inputs = inputs.clone();
                     let _ = thread::Builder::new().name("control-reader".into()).spawn(move || {
+                        // A connection only becomes *the* control link once it sends a valid command
+                        // (the gateway opens with `hello`). Anything else, such as a browser or a port
+                        // scanner, is dropped without disturbing the gateway that is attached.
+                        let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                        let control = stream.try_clone().ok();
+                        let mut writer = Some(writer);
+                        let mut adopted = false;
                         for line in BufReader::new(stream).lines().map_while(Result::ok) {
-                            match serde_json::from_str::<Command>(&line) {
-                                Ok(command) => {
-                                    if inputs.send(Input::Command(command)).is_err() {
+                            let Ok(command) = serde_json::from_str::<Command>(&line) else {
+                                if adopted {
+                                    eprintln!("mix-router: ignoring an unreadable command");
+                                    continue;
+                                }
+                                return;
+                            };
+                            if !adopted {
+                                adopted = true;
+                                if let Some(control) = &control {
+                                    let _ = control.set_read_timeout(None);
+                                }
+                                if let Some(writer) = writer.take() {
+                                    if inputs.send(Input::ControlOpened(id, writer)).is_err() {
                                         return;
                                     }
                                 }
-                                Err(error) => eprintln!("mix-router: bad command: {error}"),
+                            }
+                            if inputs.send(Input::Command(command)).is_err() {
+                                return;
                             }
                         }
-                        let _ = inputs.send(Input::ControlClosed(id));
+                        if adopted {
+                            let _ = inputs.send(Input::ControlClosed(id));
+                        }
                     });
                 }
             })
