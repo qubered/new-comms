@@ -1,0 +1,9 @@
+[workspace]
+members = ["crates/audio-host-api", "crates/mix-router"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "UNLICENSED"
+rust-version = "1.98"
+version = "0.0.0"
