@@ -48,8 +48,9 @@ export function expand(ports: Port[]): Crosspoint[] {
     }));
     if (p.type === 'ifb' && p.ifb) {
       result.push({ source: p.ifb.program, destination: p.id, level: 0, gate: 'always', owner: p.id, role: 'program' });
-      // An explicit listen to the IFB already supplies this feed: do not double it.
-      const explicit = ports.some(q => q.triggers.some(t => t.functions.some(f =>
+      // Only a permanent explicit route can replace the IFB's destination feed.
+      // A monitor key must not silently remove program when the key is released.
+      const explicit = ports.some(q => q.triggers.some(t => t.kind === 'always' && t.functions.some(f =>
         (f.fn === 'listenToPort' && q.id === p.ifb!.destination && f.from === p.id) ||
         (f.fn === 'routeAudio' && f.from === p.id && f.to === p.ifb!.destination))));
       if (!explicit) result.push({ source: p.id, destination: p.ifb.destination, level: 0, gate: 'always', owner: p.id, role: 'audio' });

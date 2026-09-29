@@ -49,6 +49,16 @@ it('routes IFB program and destination once and leaves Reply dynamic', () => {
   expect(expand([a, input, ifb]).filter(x => x.source === 'ifb' && x.destination === 'a')).toHaveLength(1);
 });
 
+it('keeps the permanent IFB destination feed when another route is gated', () => {
+  const a = station('a'), input = mic('mic'), controller = station('controller');
+  const ifb: Port = { ...bus('ifb'), type: 'ifb', ifb: { program: 'mic', destination: 'a', dim: -20 } };
+  a.triggers = [{ kind: 'key', key: 3, functions: [{ fn: 'listenToPort', from: 'ifb' }] }];
+  controller.triggers = [{ kind: 'onCall', functions: [{ fn: 'routeAudio', from: 'ifb', to: 'a' }] }];
+  const routes = expand([a, input, ifb, controller]).filter(x => x.source === 'ifb' && x.destination === 'a');
+  expect(routes.filter(x => x.gate === 'always')).toEqual([expect.objectContaining({ owner: 'ifb' })]);
+  expect(routes.filter(x => x.gate !== 'always')).toHaveLength(2);
+});
+
 describe('constraints', () => {
   it('rejects invalid and duplicate keys, input keys and output Vox', () => {
     const a = station('a');
