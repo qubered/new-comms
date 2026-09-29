@@ -14,7 +14,6 @@
   --hot:#E0202F; --hot-2:#F04350;
   --pl:#5B9BFF; --direct:#C48BFF; --pgm:#F0B429;
   --ok:#3FCB7A; --warn:#F5A524;
-  --tape:#EDE8DA;
   --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 }
 *{box-sizing:border-box}
@@ -43,31 +42,22 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 .screen.on{display:flex}
 .scroll{flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 
-/* tape label */
-.tape{display:inline-block;background:var(--tape);color:#1a1a1a;font:600 17px/1 var(--ui);padding:9px 14px 8px;
-  clip-path:polygon(0 4%,99% 0,100% 96%,1.5% 100%);box-shadow:0 1px 1px rgba(0,0,0,.35);transform:rotate(-.8deg);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pack:nth-child(even) .tape{transform:rotate(.5deg);clip-path:polygon(1% 0,100% 3%,99% 100%,0 97%)}
-.pack:nth-child(3n) .tape{background:#E9E2CF}
-.tape.sm{font-size:15px;padding:6px 10px 5px;transform:none}
-
-/* picker */
-.hdr{padding:calc(20px + env(safe-area-inset-top,0px)) 20px 8px;display:flex;align-items:baseline;justify-content:space-between}
-.hdr h1{margin:0;font:600 24px/1.2 var(--ui)}
-.hdr .sys{color:var(--fg-2);font-size:14px}
-.packs{padding:8px 16px calc(28px + env(safe-area-inset-bottom,0px))}
-.pack{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:14px 4px;min-height:64px;border-bottom:1px solid var(--line)}
-.pack:active{background:var(--surface)}
-.pack .meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
-.pack .chs{color:var(--fg-3);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:2px}
-.pack .pinmark{display:inline-flex;align-items:center;gap:4px;color:var(--fg-2)}
-.pack .chev{color:var(--fg-3);font-size:20px}
-.pack.hw{opacity:.55;cursor:default}
-.pack.hw .tape{background:#CFC9BA}
-.sect{padding:22px 4px 4px;color:var(--fg-3);font-size:13px}
+/* picker: same top bar and tile grid as the key screen */
+.packs{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 12px calc(28px + env(safe-area-inset-bottom,0px))}
+.pack{position:relative;min-height:118px;border-radius:10px;background:var(--key);padding:14px 12px 12px;display:flex;flex-direction:column;gap:2px;text-align:left;overflow:hidden}
+.pack::before{content:"";position:absolute;left:12px;right:12px;top:0;height:3px;background:var(--line-2);border-radius:0 0 2px 2px}
+.pack:active{background:var(--key-2)}
+.pack .nm{font-size:20px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pack .chs{color:var(--fg-3);font-size:13.5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pack .pinmark{margin-top:auto;padding-top:8px;display:inline-flex;align-items:center;gap:5px;color:var(--fg-2);font-size:13px}
+.pack.hw{cursor:default;background:var(--surface)}
+.pack.hw .nm{color:var(--fg-2)}
+.sect{grid-column:1 / -1;padding:14px 4px 0;color:var(--fg-3);font-size:13.5px}
 
 /* pin */
 .pin{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;padding:20px}
-.pin .who{display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--fg-2);font-size:15px}
+.pin .who{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--fg-2);font-size:15px}
+.pin .who b{font-size:20px;color:var(--fg)}
 .dots{display:flex;gap:14px}
 .dots i{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--fg-3)}
 .dots i.f{background:var(--fg);border-color:var(--fg)}
@@ -171,13 +161,18 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;bac
   <div class="phone">
 
     <section class="screen on" id="s-pick">
-      <div class="hdr"><h1>Choose your pack</h1><span class="sys">Stage A</span></div>
+      <div class="top">
+        <div class="st"><span class="dot"></span><span>Stage A</span></div>
+        <span class="sp"></span>
+        <span class="num" id="clock2">19:42</span>
+      </div>
+      <div class="packrow"><span class="name">Choose your pack</span></div>
       <div class="scroll"><div class="packs" id="packlist"></div></div>
     </section>
 
     <section class="screen" id="s-pin">
       <div class="pin">
-        <div class="who"><span class="tape" id="pin-name">Director</span><span>PIN</span></div>
+        <div class="who"><b id="pin-name">Director</b><span>PIN</span></div>
         <div class="dots" id="dots"><i></i><i></i><i></i><i></i></div>
         <div class="msg" id="pin-msg"></div>
         <div class="pad" id="pad"></div>
@@ -262,7 +257,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;bac
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // clock
-  const tickClock = () => { const d = new Date(); $('#clock').textContent = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0'); };
+  const tickClock = () => { const d = new Date(); const t = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0'); $('#clock').textContent = t; $('#clock2').textContent = t; };
   tickClock(); setInterval(tickClock, 15000);
 
   // picker
@@ -270,13 +265,13 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;bac
   PACKS.forEach(p => {
     const b = document.createElement('button'); b.className = 'pack';
     const names = p.ch.map(([c]) => CH[c].name);
-    const pin = p.pin ? `<span class="pinmark"><svg width="11" height="13" viewBox="0 0 12 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="6" width="10" height="7" rx="1.5"/><path d="M3.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg>PIN ·</span> ` : '';
-    b.innerHTML = `<div class="meta"><span class="tape">${p.name}</span><span class="chs">${pin}${names.join(', ')}</span></div><span class="chev">›</span>`;
+    const pin = p.pin ? `<span class="pinmark"><svg width="11" height="13" viewBox="0 0 12 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="6" width="10" height="7" rx="1.5"/><path d="M3.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg>PIN</span>` : '';
+    b.innerHTML = `<div class="nm">${p.name}</div><div class="chs">${names.join(', ')}</div>${pin}`;
     b.addEventListener('click', () => p.pin ? openPin(p) : enter(p));
     list.appendChild(b);
   });
   const sect = document.createElement('div'); sect.className = 'sect'; sect.textContent = 'Hardware'; list.appendChild(sect);
-  HW.forEach(h => { const d = document.createElement('div'); d.className = 'pack hw'; d.innerHTML = `<div class="meta"><span class="tape">${h.name}</span><span class="chs">${h.note}</span></div>`; list.appendChild(d); });
+  HW.forEach(h => { const d = document.createElement('div'); d.className = 'pack hw'; d.innerHTML = `<div class="nm">${h.name}</div><div class="chs">${h.note}</div>`; list.appendChild(d); });
 
   // pin
   let pinPack = null, pinBuf = '';
