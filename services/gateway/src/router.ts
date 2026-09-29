@@ -34,7 +34,7 @@ export class MixRouter extends EventEmitter {
   private retry?: NodeJS.Timeout;
   private pending = new Map<string, { resolve: (sdp: string) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   ready = false;
-  private lastConfig?: string;
+  private lastConfig?: () => string;
   private warned = false;
 
   constructor(private readonly address: string) {
@@ -91,7 +91,7 @@ export class MixRouter extends EventEmitter {
   private handle(event: RouterEvent): void {
     if (event.event === "ready") {
       this.ready = true;
-      if (this.lastConfig) this.write(this.lastConfig);
+      if (this.lastConfig) this.write(this.lastConfig());
     }
     if (event.event === "answer" || event.event === "rejected") {
       const entry = this.pending.get(event.sessionId);
@@ -124,14 +124,15 @@ export class MixRouter extends EventEmitter {
         keys: keys.map(({ channelId, volume }) => ({ channelId, volume })),
       })),
     });
-    this.lastConfig = line;
+    this.lastConfig = () => line;
     if (this.ready) this.write(line);
   }
 
   configurePorts(ports: Port[], crosspoints: Crosspoint[]): void {
-    const line = JSON.stringify({ cmd: "configPorts", ports, crosspoints });
-    this.lastConfig = line;
-    if (this.ready) this.write(line);
+    // Gateway persists operator levels onto these ports between configuration edits.
+    // Serialize when reconnecting so a restarted router receives the latest levels.
+    this.lastConfig = () => JSON.stringify({ cmd: "configPorts", ports, crosspoints });
+    if (this.ready) this.write(this.lastConfig());
   }
 
   open(sessionId: string, packId: string, offer: string, candidateIp: string): Promise<string> {

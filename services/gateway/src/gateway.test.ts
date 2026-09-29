@@ -110,3 +110,83 @@ it('rejects deletion that would orphan another port’s function', () => {
   expect(() => gateway.deletePort('show')).toThrow('target does not exist'); expect(gateway.ports.some(p => p.id === 'show')).toBe(true);
 });
 it('identifies browser clients', () => { expect(describeClient('iPhone Safari/')).toBe('iPhone, Safari'); expect(describeClient('Macintosh Chrome/')).toBe('Mac, Chrome'); });
+
+it('rejects inconsistent imported inventories and saved shows without partial writes', () => {
+  const { gateway, path, router } = setup();
+  gateway.registerNode({ nodeId: 'rack', name: 'Rack', address: '', inputs: ['In'], outputs: [] });
+  const before = structuredClone(gateway.store.config), configured = router.configured;
+  const duplicate = structuredClone(before); duplicate.nodes[0].inputs.push({ ...duplicate.nodes[0].inputs[0] });
+  expect(() => gateway.replaceShow(duplicate)).toThrow('channel numbers must be unique');
+  const missing = structuredClone(before); missing.nodes[0].inputs[0].inUse = true;
+  expect(() => gateway.replaceShow(missing)).toThrow('channel in use needs exactly one');
+  const collision = structuredClone(before); collision.ports.push({ id: 'rack', name: 'Phone', label: 'Phone', type: 'station', station: { masterVolume: 80, volumes: {}, replyMode: 'ptt' }, triggers: [] });
+  expect(() => gateway.replaceShow(collision)).toThrow('Node and port IDs must be distinct');
+  expect(gateway.store.config).toEqual(before); expect(router.configured).toBe(configured);
+  writeFileSync(path, JSON.stringify(duplicate)); expect(() => new Store(path)).toThrow('channel numbers must be unique');
+});
+
+it('preserves edited node names and IDs across channel reorder, registration and restart', () => {
+  const { gateway, store, path, router } = setup();
+  const registration = { nodeId: 'rack', name: 'Hardware name', address: 'local', inputs: ['In 1', 'In 2'], outputs: [] };
+  gateway.registerNode(registration);
+  gateway.registerNode({ nodeId: 'other', name: 'Other', address: 'local', inputs: [], outputs: [] });
+  const node = structuredClone(gateway.nodes[0]); node.inputs[0].inUse = true;
+  gateway.updateNode(node.id, { name: 'Stage rack', inputs: node.inputs.reverse(), outputs: [] });
+  const id = gateway.ports[0].id, configured = router.configured;
+  gateway.registerNode(registration);
+  expect(gateway.nodes.map(n => n.id)).toEqual(['rack', 'other']);
+  expect(gateway.nodes[0].name).toBe('Stage rack'); expect(gateway.nodes[0].inputs.map(c => c.channel)).toEqual([1, 2]);
+  expect(gateway.ports[0].id).toBe(id); expect(router.configured).toBe(configured);
+  store.flush(); expect(new Store(path).config).toEqual(store.config);
+});
+
+it('refuses to silently discard a channel’s own routing functions on removal', () => {
+  const { gateway } = setup();
+  const target = gateway.createPort(station('Target'));
+  const registration = { nodeId: 'rack', name: 'Rack', address: '', inputs: ['In'], outputs: [] };
+  gateway.registerNode(registration);
+  const node = structuredClone(gateway.nodes[0]); node.inputs[0].inUse = true;
+  gateway.updateNode(node.id, { name: node.name, inputs: node.inputs, outputs: [] });
+  const input = gateway.ports.find(p => p.type === 'input')!;
+  gateway.updatePort(input.id, { ...write(input), triggers: [{ kind: 'vox', functions: [{ fn: 'callToPort', to: target.id }] }] });
+  node.inputs[0].inUse = false;
+  expect(() => gateway.updateNode(node.id, { name: node.name, inputs: node.inputs, outputs: [] })).toThrow('channel is routed');
+  expect(() => gateway.registerNode({ ...registration, inputs: [] })).toThrow('channel is routed');
+  expect(gateway.ports.find(p => p.id === input.id)?.triggers).toHaveLength(1);
+  expect(gateway.nodes[0].inputs[0].inUse).toBe(true);
+});
+
+it('does not count a pending replacement as a connected station', async () => {
+  const { gateway, router } = setup(); const p = gateway.createPort(station('Phone'));
+  router.emit('event', { event: 'connected', sessionId: 'old', packId: p.id });
+  const replacement = await gateway.openSession(p.id, 'offer', undefined, '127.0.0.1', 'Test');
+  router.emit('event', { event: 'closed', sessionId: 'old', packId: p.id, reason: 'replaced' });
+  expect(gateway.live.get(p.id)?.connected).toBe(false);
+  router.emit('event', { event: 'connected', sessionId: replacement.sessionId, packId: p.id });
+  expect(gateway.live.get(p.id)?.connected).toBe(true);
+  router.emit('event', { event: 'sync', sessions: [] });
+  expect(gateway.live.get(p.id)?.connected).toBe(false); expect(gateway.live.get(p.id)?.keys).toEqual({});
+});
+
+it('normalizes live references and operator levels on edits while the router is offline', () => {
+  const { gateway, router } = setup(); const a = gateway.createPort(station('A')), b = gateway.createPort(station('B'));
+  router.emit('event', { event: 'portState', portId: b.id, keys: { '1': true }, micOff: false, voxOpen: false, incoming: [a.id], lastCaller: a.id, audible: [a.id], volumes: { [a.id]: 25 }, masterVolume: 70 });
+  gateway.deletePort(a.id);
+  expect(gateway.live.get(b.id)).toMatchObject({ keys: {}, incoming: [], audible: [], volumes: {} });
+  expect(gateway.live.get(b.id)?.lastCaller).toBeUndefined();
+  gateway.updatePort(b.id, { ...write(gateway.ports.find(p => p.id === b.id)!), station: { masterVolume: 43, volumes: {}, replyMode: 'ptt' } });
+  expect(gateway.live.get(b.id)?.masterVolume).toBe(43);
+  router.emit('event', { event: 'levels', levels: { [a.id]: 0.4, [b.id]: 0.2 } });
+  expect(gateway.levels).toEqual({ [b.id]: 0.2 });
+});
+
+it('retains omitted station PINs when a public show snapshot is imported', () => {
+  const { gateway, path } = setup();
+  const p = gateway.createPort({ ...station('Private'), station: { pin: '1234', masterVolume: 80, volumes: {}, replyMode: 'ptt' } });
+  const snapshot = gateway.snapshot();
+  gateway.replaceShow({ version: 2, name: snapshot.name, ports: snapshot.ports, nodes: snapshot.nodes });
+  expect(() => gateway.verifyPin(p.id, '0000')).toThrow('Wrong PIN');
+  expect(() => gateway.verifyPin(p.id, '1234')).not.toThrow();
+  gateway.store.flush(); const loaded = new Store(path);
+  expect(loaded.config.ports.find(port => port.id === p.id)?.station?.pin).toBe('1234');
+});

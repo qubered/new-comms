@@ -1,4 +1,4 @@
-import type { Crosspoint, Function as PortFunction, Gate, Port, Trigger } from './generated.ts';
+import type { Crosspoint, Function as PortFunction, Gate, Port, Trigger, Show } from './generated.ts';
 
 export const DEFAULT_VOX = { threshold: -40, attack: 20, hang: 600 };
 export const hasInput = (p: Port) => ['station', 'input', 'conference', 'ifb'].includes(p.type);
@@ -128,4 +128,37 @@ export function checkPorts(ports: Port[]): ConstraintIssue[] {
     if (!crosspoints.some(x => x.destination === p.id)) add(p, 'A conference needs at least one talker.', 'attention');
   }
   return issues.filter((issue, i, all) => all.findIndex(other => other.portId === issue.portId && other.message === issue.message) === i);
+}
+
+/** Validate hardware inventory too, for both imports and ordinary edits. */
+export function checkShow(show: Show): ConstraintIssue[] {
+  const issues = checkPorts(show.ports);
+  const add = (portId: string, message: string) => issues.push({ portId, message, severity: 'error' });
+  const nodeIds = new Set<string>();
+  const circuits = new Set<string>();
+  for (const node of show.nodes) {
+    if (nodeIds.has(node.id)) add(node.id, 'Node IDs must be unique.');
+    nodeIds.add(node.id);
+    if (show.ports.some(p => p.id === node.id)) add(node.id, 'Node and port IDs must be distinct.');
+    for (const [dir, type] of [['inputs', 'input'], ['outputs', 'output']] as const) {
+      const channels = new Set<number>();
+      for (const channel of node[dir]) {
+        if (channels.has(channel.channel)) add(node.id, 'Hardware channel numbers must be unique in each direction.');
+        channels.add(channel.channel);
+        const ports = show.ports.filter(p => p.hardware?.nodeId === node.id && p.type === type && p.hardware.channel === channel.channel);
+        if (channel.inUse && ports.length !== 1) add(node.id, 'Each channel in use needs exactly one I/O port.');
+        if (!channel.inUse && ports.length) add(node.id, 'An I/O port needs a channel in use.');
+        for (const port of ports) if (port.hardware!.trim !== channel.trim || port.hardware!.shortName !== channel.shortName) add(port.id, 'I/O port trim and short name must match its hardware channel.');
+      }
+    }
+  }
+  for (const port of show.ports) if (port.hardware) {
+    const h = port.hardware;
+    const node = show.nodes.find(n => n.id === h.nodeId);
+    const channel = node?.[port.type === 'input' ? 'inputs' : 'outputs'].find(c => c.channel === h.channel && c.inUse);
+    const circuit = `${h.nodeId}:${port.type}:${h.channel}`;
+    if (!channel || circuits.has(circuit)) add(port.id, 'Each I/O port needs a unique channel in use on a registered node.');
+    circuits.add(circuit);
+  }
+  return issues;
 }

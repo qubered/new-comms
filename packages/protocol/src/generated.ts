@@ -198,6 +198,7 @@ export type ShowEvent =
       ports: Port[];
       nodes: Node[];
       crosspoints: Crosspoint[];
+      name: string;
     }
   | {
       type: "live";

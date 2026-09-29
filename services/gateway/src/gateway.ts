@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { EventEmitter } from 'node:events';
-import { checkPorts, expand, functionTarget, type Port, type PortWrite, type PortLiveState, type Show, type ShowSnapshot, type ShowEvent, type Node, type NodeWrite, type V2NodeRegistration } from '@comms/protocol';
+import { checkShow, expand, functionTarget, type Port, type PortWrite, type PortLiveState, type Show, type ShowSnapshot, type ShowEvent, type Node, type NodeWrite, type V2NodeRegistration } from '@comms/protocol';
 import { HttpError } from './errors.ts';
 import { MixRouter, type RouterEvent } from './router.ts';
 import { validate } from './validate.ts';
@@ -15,6 +15,7 @@ export class Gateway extends EventEmitter {
   levels: Record<string, number> = {};
   mixerStats?: { tickAvgUs: number; tickMaxUs: number; peers: number; queues?: unknown };
   sessions = new Map<string, string>();
+  private connectedSessions = new Set<string>();
   constructor(readonly store: Store, readonly router: MixRouter, readonly name?: string) {
     super();
     router.on('event', (event: RouterEvent) => this.onRouter(event));
@@ -37,28 +38,43 @@ export class Gateway extends EventEmitter {
   private pushConfig() {
     this.store.save();
     for (const id of this.live.keys()) if (!this.ports.some(p => p.id === id)) this.live.delete(id);
+    this.levels = Object.fromEntries(Object.entries(this.levels).filter(([id]) => this.ports.some(p => p.id === id)));
     const crosspoints = expand(this.ports);
     this.router.configurePorts(this.ports, crosspoints);
-    this.broadcast({ type: 'config', rev: ++this.rev, ports: this.ports.map(p => this.publicPort(p)), nodes: this.nodes, crosspoints });
+    this.broadcast({ type: 'config', rev: ++this.rev, name: this.name ?? this.store.config.name, ports: this.ports.map(p => this.publicPort(p)), nodes: this.nodes, crosspoints });
   }
   private commit(next: Show) {
     validate<Show>('Show', next);
-    const errors = checkPorts(next.ports).filter(i => i.severity === 'error');
-    if (errors.length) throw new HttpError(409, errors.map(i => `${next.ports.find(p => p.id === i.portId)?.label}: ${i.message}`).join(' '));
-    const nodeIds = new Set(next.nodes.map(n => n.id));
-    if (nodeIds.size !== next.nodes.length) throw new HttpError(409, 'Node IDs must be unique.');
-    const circuits = new Set<string>();
-    for (const p of next.ports) if (p.hardware) {
-      const node = next.nodes.find(n => n.id === p.hardware!.nodeId);
-      const channel = node?.[p.type === 'input' ? 'inputs' : 'outputs'].find(c => c.channel === p.hardware!.channel && c.inUse);
-      const circuit = `${p.hardware.nodeId}:${p.type}:${p.hardware.channel}`;
-      if (!channel || circuits.has(circuit)) throw new HttpError(409, 'Each I/O port needs a unique channel in use on a registered node.');
-      circuits.add(circuit);
+    const errors = checkShow(next).filter(i => i.severity === 'error');
+    if (errors.length) throw new HttpError(409, errors.map(i => `${next.ports.find(p => p.id === i.portId)?.label ?? next.nodes.find(n => n.id === i.portId)?.name ?? i.portId}: ${i.message}`).join(' '));
+    for (const p of next.ports) if (p.station) p.station.volumes = Object.fromEntries(Object.entries(p.station.volumes).filter(([id]) => next.ports.some(source => source.id === id)));
+    for (const p of next.ports) {
+      const old = this.ports.find(old => old.id === p.id);
+      if (old && (old.type !== p.type || old.hardware?.nodeId !== p.hardware?.nodeId || old.hardware?.channel !== p.hardware?.channel)) this.live.delete(p.id);
     }
     this.store.config = next;
     this.pushConfig();
+    for (const [session, owner] of this.sessions) if (!this.sessionPorts(owner).length) this.router.close(session);
+    const valid = new Set(next.ports.map(p => p.id));
+    for (const p of next.ports) {
+      const state = this.live.get(p.id); if (!state) continue;
+      const normalized: PortLiveState = { ...state,
+        keys: Object.fromEntries(Object.entries(state.keys).filter(([key]) => p.triggers.some(t => t.kind === 'reply' ? key === 'reply' : t.kind === 'key' && String(t.key) === key))),
+        incoming: state.incoming.filter(id => valid.has(id)), audible: state.audible.filter(id => valid.has(id)),
+        lastCaller: next.ports.some(source => source.id === state.lastCaller && ['station', 'output'].includes(source.type)) ? state.lastCaller : undefined,
+        volumes: p.station?.volumes ?? state.volumes, masterVolume: p.station?.masterVolume ?? state.masterVolume,
+      };
+      if (!isDeepStrictEqual(state, normalized)) this.setLive(p.id, normalized);
+    }
   }
-  replaceShow(raw: unknown) { const next = validate<Show>('Show', raw); this.commit(structuredClone(next)); return this.snapshot(); }
+  replaceShow(raw: unknown) {
+    const next = structuredClone(validate<Show>('Show', raw));
+    for (const p of next.ports) {
+      const pin = this.ports.find(old => old.id === p.id)?.station?.pin;
+      if (pin && p.station && !('pin' in p.station)) p.station.pin = pin;
+    }
+    this.commit(next); return this.snapshot();
+  }
   private findPort(id: string) { const p = this.ports.find(p => p.id === id); if (!p) throw new HttpError(404, 'No such port.'); return p; }
   private setLive(id: string, patch: Partial<PortLiveState>) {
     const p = this.ports.find(p => p.id === id); if (!p) return;
@@ -69,23 +85,27 @@ export class Gateway extends EventEmitter {
   private sessionPorts(id: string) { return this.ports.filter(p => p.id === id || p.hardware?.nodeId === id); }
   private allOffline() {
     for (const p of this.ports) this.setLive(p.id, { connected: false, keys: {}, voxOpen: false, incoming: [], audible: [], client: undefined });
-    this.sessions.clear(); this.levels = {}; this.mixerStats = undefined;
+    this.sessions.clear(); this.connectedSessions.clear(); this.levels = {}; this.mixerStats = undefined;
     this.broadcast({ type: 'levels', levels: {}, vox: {} });
   }
   private onRouter(event: RouterEvent) {
     switch (event.event) {
       case 'sync':
-        this.sessions.clear();
-        for (const session of event.sessions) this.sessions.set(session.sessionId, session.packId);
-        for (const p of this.ports) this.setLive(p.id, { connected: [...this.sessions.values()].includes(p.hardware?.nodeId ?? p.id) });
+        this.sessions.clear(); this.connectedSessions.clear();
+        for (const session of event.sessions) { this.sessions.set(session.sessionId, session.packId); this.connectedSessions.add(session.sessionId); }
+        for (const p of this.ports) {
+          const connected = [...this.sessions.values()].includes(p.hardware?.nodeId ?? p.id);
+          this.setLive(p.id, connected ? { connected } : { connected, keys: {}, voxOpen: false, incoming: [], audible: [], client: undefined });
+        }
         break;
       case 'connected':
+        this.connectedSessions.add(event.sessionId);
         this.sessions.set(event.sessionId, event.packId);
         for (const p of this.sessionPorts(event.packId)) this.setLive(p.id, { connected: true });
         break;
       case 'closed':
-        this.sessions.delete(event.sessionId);
-        if (![...this.sessions.values()].includes(event.packId)) for (const p of this.sessionPorts(event.packId)) this.setLive(p.id, { connected: false, keys: {}, voxOpen: false, incoming: [], audible: [], client: undefined });
+        this.sessions.delete(event.sessionId); this.connectedSessions.delete(event.sessionId);
+        if (![...this.sessions].some(([id, owner]) => owner === event.packId && this.connectedSessions.has(id))) for (const p of this.sessionPorts(event.packId)) this.setLive(p.id, { connected: false, keys: {}, voxOpen: false, incoming: [], audible: [], client: undefined });
         break;
       case 'portState': {
         const p = this.ports.find(p => p.id === event.portId); if (!p) break;
@@ -95,8 +115,8 @@ export class Gateway extends EventEmitter {
         break;
       }
       case 'levels':
-        this.levels = event.levels;
-        this.broadcast({ type: 'levels', levels: event.levels, vox: Object.fromEntries([...this.live].map(([id, s]) => [id, s.voxOpen])) });
+        this.levels = Object.fromEntries(Object.entries(event.levels).filter(([id]) => this.ports.some(p => p.id === id)));
+        this.broadcast({ type: 'levels', levels: this.levels, vox: Object.fromEntries([...this.live].map(([id, s]) => [id, s.voxOpen])) });
         break;
       case 'stats': this.mixerStats = event; break;
     }
@@ -128,7 +148,6 @@ export class Gateway extends EventEmitter {
     if (p.hardware) throw new HttpError(409, 'Untick the channel in I/O nodes to remove this port.');
     const next = structuredClone(this.store.config); next.ports = next.ports.filter(p => p.id !== id);
     this.commit(next); // Refuse dangling routes; tell the user which owners need editing.
-    for (const [session, owner] of this.sessions) if (owner === id) this.router.close(session);
   }
   clearPin(id: string) {
     this.findPort(id);
@@ -155,11 +174,12 @@ export class Gateway extends EventEmitter {
     const body = validate<V2NodeRegistration>('V2NodeRegistration', raw); const next = structuredClone(this.store.config);
     const old = next.nodes.find(n => n.id === body.nodeId);
     const channels = (dir: 'inputs' | 'outputs') => body[dir].map((name, i) => ({ channel: i + 1, inUse: false, trim: 0, ...old?.[dir].find(c => c.channel === i + 1), name }));
-    const node: Node = { id: body.nodeId, name: body.name, address: body.address, lastSeen: Date.now(), inputs: channels('inputs'), outputs: channels('outputs') };
-    next.nodes = [...next.nodes.filter(n => n.id !== node.id), node];
+    const node: Node = { id: body.nodeId, name: old?.name ?? body.name, address: body.address, lastSeen: Date.now(), inputs: channels('inputs'), outputs: channels('outputs') };
+    if (old) next.nodes = next.nodes.map(n => n.id === node.id ? node : n);
+    else next.nodes.push(node);
     this.reconcileNode(next, node);
     const heartbeat = old && isDeepStrictEqual({ ...old, lastSeen: 0 }, { ...node, lastSeen: 0 }) && isDeepStrictEqual(next.ports, this.ports);
-    if (heartbeat) { this.store.config = next; this.store.save(); }
+    if (heartbeat) { this.nodes.find(n => n.id === node.id)!.lastSeen = node.lastSeen; this.store.save(); }
     else this.commit(next);
     return { nodeId: node.id, ports: next.ports.filter(p => p.hardware?.nodeId === node.id) };
   }
@@ -168,7 +188,7 @@ export class Gateway extends EventEmitter {
     if (!node) throw new HttpError(404, 'No such node.');
     for (const dir of ['inputs', 'outputs'] as const) {
       if (body[dir].length !== node[dir].length || new Set(body[dir].map(c => c.channel)).size !== body[dir].length || body[dir].some(c => !node[dir].some(old => old.channel === c.channel))) throw new HttpError(409, 'Only registered hardware channels can be selected.');
-      node[dir] = body[dir];
+      node[dir] = body[dir].slice().sort((a,b) => a.channel - b.channel);
     }
     node.name = body.name; this.reconcileNode(next, node); this.commit(next); return node;
   }
@@ -185,8 +205,9 @@ export class Gateway extends EventEmitter {
     }
     const removed = next.ports.filter(p => p.hardware?.nodeId === node.id && !retained.has(p.id)).map(p => p.id);
     for (const id of removed) {
+      const owned = next.ports.find(p => p.id === id)!.triggers.some(t => t.functions.length > 0);
       const used = next.ports.some(p => p.id !== id && (p.group?.members.includes(id) || p.ifb?.program === id || p.ifb?.destination === id || p.triggers.some(t => t.functions.some(f => functionTarget(f) === id || f.fn === 'routeAudio' && f.from === id))));
-      if (used) throw new HttpError(409, 'This channel is routed. Remove its incoming routes before turning it off.');
+      if (owned || used) throw new HttpError(409, 'This channel is routed. Remove its functions and incoming routes before turning it off.');
     }
     next.ports = next.ports.filter(p => !removed.includes(p.id));
   }

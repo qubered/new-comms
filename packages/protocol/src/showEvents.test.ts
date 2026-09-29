@@ -5,7 +5,8 @@ import { expand } from './routing.ts';
 import type { ShowSnapshot } from './generated.ts';
 it('resynchronizes revision gaps and prunes deleted ports while preserving live state', () => {
   const show = demoShow(); const state: ShowSnapshot = { rev: 3, name: show.name, ports: show.ports, nodes: [], crosspoints: expand(show.ports), live: { sm: { portId: 'sm', connected: true, keys: { '1': true }, micOff: false, voxOpen: false, incoming: [], volumes: {}, masterVolume: 80, audible: ['show'] } } };
-  const config = { type: 'config' as const, rev: 4, ports: show.ports, nodes: [], crosspoints: state.crosspoints };
+  const config = { type: 'config' as const, rev: 4, name: 'New name', ports: show.ports, nodes: [], crosspoints: state.crosspoints };
+  expect((applyShowEvent(state, config) as ShowSnapshot).name).toBe('New name');
   expect(applyShowEvent(state, { ...config, rev: 5 })).toBe('resync');
   expect(applyShowEvent(null, config)).toBe('resync');
   expect((applyShowEvent(state, config) as ShowSnapshot).live.sm.keys['1']).toBe(true);

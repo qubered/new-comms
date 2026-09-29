@@ -110,3 +110,13 @@ it('migrates a hardware direct receive level onto its input and keeps PGM at ful
     expect.objectContaining({ source: 'pgm', destination: 'phone', level: 0, gate: 'always' }),
   ]));
 });
+
+it('keeps migrated conference IDs distinct from hardware session IDs', () => {
+  const show = migrateV1({
+    channels: [{ id: 'rack', name: 'Show', type: 'partyline', members: [] }],
+    packs: [{ id: 'rack', name: 'Rack', type: 'hardware', masterVolume: 100, keys: [{ channelId: 'rack', mode: 'ptt', volume: 100 }] }],
+  });
+  expect(show.ports.find(p => p.type === 'conference')?.id).toBe('rack-2');
+  expect(show.nodes[0].id).toBe('rack');
+  expect(checkPorts(show.ports)).toEqual([]);
+});

@@ -3,7 +3,7 @@ import type { Channel, Pack, Port, Show, Trigger } from './generated.ts';
 /** Convert saved v1 configuration without mutating it. Runtime state is never migrated. */
 export function migrateV1(config: { name?: string; channels: Channel[]; packs: Pack[] }): Show {
   const ports: Port[] = [];
-  const used = new Set(config.packs.filter(p => p.type === 'human').map(p => p.id));
+  const used = new Set(config.packs.map(p => p.id));
   const allocate = (preferred: string): string => {
     let id = preferred;
     for (let n = 2; used.has(id); n++) id = `${preferred}-${n}`;
