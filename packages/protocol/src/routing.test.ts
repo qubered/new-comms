@@ -88,7 +88,7 @@ it('migrates party lines, PGM, direct calls, hardware trims and operator levels 
   const channels: Channel[] = [{id:'show',name:'Show',type:'partyline',members:[]},{id:'pgm',name:'Program',type:'pgm',members:[]},{id:'direct',name:'Direct',type:'direct',members:[]}];
   const pack = (id: string): Pack => ({id,name:id,type:'human',masterVolume:80,keys:[{channelId:'show',mode:'auto',volume:65},{channelId:'pgm',mode:'ptt',volume:0},{channelId:'direct',mode:'latch',volume:45}]});
   const a = pack('a'), b = pack('b');
-  const node: Pack = {...pack('rack'),type:'hardware',keys:[{channelId:'pgm',mode:'ptt',volume:100}],device:{name:'Rack',address:'local',inputs:['In'],outputs:['Out'],lastSeen:99,inputTrim:6,outputTrim:-6}};
+  const node: Pack = {...pack('rack'),type:'hardware',keys:[{channelId:'pgm',mode:'ptt',volume:100}],device:{name:'Rack',address:'local',inputs:['In 1'],outputs:['Out 1'],input:'In 1',output:'Out 1',lastSeen:99,inputTrim:6,outputTrim:-6}};
   const before = JSON.stringify({channels,packs:[a,b,node]});
   const show = migrateV1(JSON.parse(before));
   expect(checkPorts(show.ports)).toEqual([]);
@@ -109,7 +109,7 @@ it('migrates a hardware direct receive level onto its input and keeps PGM at ful
   const channels: Channel[] = [{ id: 'direct', name: 'Direct', type: 'direct', members: [] }, { id: 'pgm', name: 'PGM', type: 'pgm', members: [] }];
   const packs: Pack[] = [
     { id: 'phone', name: 'Phone', type: 'human', masterVolume: 80, keys: [{ channelId: 'direct', mode: 'ptt', volume: 37 }, { channelId: 'pgm', mode: 'ptt', volume: 0 }] },
-    { id: 'rack', name: 'Rack', type: 'hardware', masterVolume: 100, keys: [{ channelId: 'direct', mode: 'ptt', volume: 100 }, { channelId: 'pgm', mode: 'ptt', volume: 100 }] },
+    { id: 'rack', name: 'Rack', type: 'hardware', masterVolume: 100, device: { name: 'Rack', address: '', inputs: ['In 1'], outputs: ['Out 1'], input: 'In 1', output: 'Out 1', lastSeen: 0 }, keys: [{ channelId: 'direct', mode: 'ptt', volume: 100 }, { channelId: 'pgm', mode: 'ptt', volume: 100 }] },
   ];
   const show = migrateV1({ channels, packs });
   const phone = show.ports.find(p => p.id === 'phone')!;
@@ -124,7 +124,7 @@ it('migrates a hardware direct receive level onto its input and keeps PGM at ful
 it('keeps migrated conference IDs distinct from hardware session IDs', () => {
   const show = migrateV1({
     channels: [{ id: 'rack', name: 'Show', type: 'partyline', members: [] }],
-    packs: [{ id: 'rack', name: 'Rack', type: 'hardware', masterVolume: 100, keys: [{ channelId: 'rack', mode: 'ptt', volume: 100 }] }],
+    packs: [{ id: 'rack', name: 'Rack', type: 'hardware', masterVolume: 100, device: { name: 'Rack', address: '', inputs: ['In 1'], outputs: ['Out 1'], input: 'In 1', output: 'Out 1', lastSeen: 0 }, keys: [{ channelId: 'rack', mode: 'ptt', volume: 100 }] }],
   });
   expect(show.ports.find(p => p.type === 'conference')?.id).toBe('rack-2');
   expect(show.nodes[0].id).toBe('rack');
