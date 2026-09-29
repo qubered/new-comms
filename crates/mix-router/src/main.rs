@@ -26,11 +26,12 @@ const LEVEL_EVERY: u32 = 20; // ticks: 100 ms
 const STATS_EVERY: u32 = 400; // ticks: 2 s
 
 enum Input {
-    Command(Command),
+    Command(u64, Command),
     Datagram {
         local: SocketAddr,
         source: SocketAddr,
-        contents: Vec<u8>,
+        contents: [u8; 2048],
+        len: usize,
     },
     /// A gateway connected; it becomes the only control connection.
     ControlOpened(u64, TcpStream),
@@ -78,6 +79,8 @@ fn bind_media_socket(ip: IpAddr) -> io::Result<UdpSocket> {
     if ip.is_ipv4() {
         let _ = socket.set_tos_v4(DSCP_EF_TOS);
     }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    if ip.is_ipv6() {let _ = socket.set_tclass_v6(DSCP_EF_TOS);}
     socket.bind(&address.into())?;
     Ok(socket.into())
 }
@@ -90,7 +93,8 @@ fn receive_datagrams(socket: &UdpSocket, local: SocketAddr, inputs: &SyncSender<
                 let input = Input::Datagram {
                     local,
                     source,
-                    contents: buffer[..count].to_vec(),
+                    contents: buffer,
+                    len: count,
                 };
                 if inputs.send(input).is_err() {
                     return;
@@ -137,6 +141,11 @@ impl Router {
                 for peer in self.peers.values_mut() {
                     if peer.ports()!=graph.session_ports(&peer.pack_id) {peer.close("renegotiate");}
                 }
+                self.graph_states.retain(|id,_| graph.config(id).is_some());
+                self.frames.retain(|id,_|graph.config(id).is_some());
+                self.peaks.retain(|id,_|graph.config(id).is_some());
+                let ids: Vec<_> = self.by_pack.keys().cloned().collect();
+                for id in ids {self.push_device(&id);}
                 self.push_graph_states(true);
             }
             Command::Config { channels, packs } => {
@@ -160,7 +169,10 @@ impl Router {
                         detail: "unknown pack",
                     });
                 }
-                if self.peers.len() >= MAX_PEERS {
+                if self.peers.contains_key(&session_id) {
+                    return emit(&Event::Rejected { session_id: &session_id, detail: "session ID already exists" });
+                }
+                if self.peers.len() >= MAX_PEERS && !self.by_pack.contains_key(&pack_id) {
                     return emit(&Event::Rejected {
                         session_id: &session_id,
                         detail: "capacity reached",
@@ -181,7 +193,8 @@ impl Router {
                 match opened {
                     Ok((peer, answer)) => {
                         // A pack has one live session: the newest wins.
-                        if let Some(old) = self.by_pack.insert(pack_id, session_id.clone()) {
+                        if let Some(old) = self.by_pack.insert(pack_id.clone(), session_id.clone()) {
+                            if let Some(graph)=&mut self.graph {graph.release(&pack_id);}
                             if let Some(old_peer) = self.peers.get_mut(&old) {
                                 old_peer.close("replaced");
                             }
@@ -356,22 +369,19 @@ impl Router {
     /// One 10 ms mixing cycle.
     fn tick(&mut self, now: Instant) {
         let started = Instant::now();
-        self.frames.clear();
+        // Keep the per-port buffers allocated. Missing/disconnected inputs contribute silence.
+        for frame in self.frames.values_mut() {frame.fill(0.0);}
         for peer in self.peers.values_mut() {
             if !peer.connected {
                 continue;
             }
             if let Some(graph)=&self.graph {
-                for (id,input,_) in peer.ports() {
-                    if !input {continue;}
-                    let mut frame=[0.0_f32;FRAME];
-                    if peer.take_port_frame(&id,&mut frame) {
-                        let trim=graph.input_gain(&id);for sample in &mut frame {*sample*=trim;}
-                        let peak=frame.iter().fold(0.0_f32,|m,s|m.max(s.abs()));
-                        let slot=self.peaks.entry(id.clone()).or_insert(0.0);*slot=slot.max(peak);
-                        self.frames.insert(id,frame);
-                    }
-                }
+                peer.take_port_frames(|id,mut frame| {
+                    let trim=graph.input_gain(id);for sample in &mut frame {*sample*=trim;}
+                    let peak=frame.iter().fold(0.0_f32,|m,s|m.max(s.abs()));
+                    if let Some(slot)=self.peaks.get_mut(id) {*slot=slot.max(peak);} else {self.peaks.insert(id.to_owned(),peak);}
+                    if let Some(slot)=self.frames.get_mut(id) {*slot=frame;} else {self.frames.insert(id.to_owned(),frame);}
+                });
                 continue;
             }
             let mut frame = [0.0_f32; FRAME];
@@ -398,7 +408,7 @@ impl Router {
                 continue;
             }
             if let Some(graph)=&self.graph {
-                for (id,_,output) in peer.ports() {if output {graph.mix_for(&id,&self.frames,&mut out);peer.send_port_frame(&id,&out,now);}}
+                peer.send_port_frames(now,|id,out|graph.mix_for(id,&self.frames,out));
                 continue;
             }
             self.mixer.mix_for(&peer.pack_id, &self.frames, &mut out);
@@ -429,7 +439,7 @@ impl Router {
                 emit(&Event::Levels { levels: &levels });
             }
             self.last_levels_nonzero = nonzero;
-            self.peaks.clear();
+            for peak in self.peaks.values_mut() {*peak=0.0;}
         }
     }
 
@@ -502,7 +512,7 @@ fn main() {
                                     }
                                 }
                             }
-                            if inputs.send(Input::Command(command)).is_err() {
+                            if inputs.send(Input::Command(id, command)).is_err() {
                                 return;
                             }
                         }
@@ -540,12 +550,12 @@ fn main() {
         let now = Instant::now();
         let wait = router.next_deadline(next_tick).saturating_duration_since(now);
         match inputs.recv_timeout(wait) {
-            Ok(Input::Command(command)) => router.handle_command(command, Instant::now()),
+            Ok(Input::Command(id, command)) => { if id == router.control_generation { router.handle_command(command, Instant::now()); } },
             Ok(Input::Datagram {
                 local,
                 source,
-                contents,
-            }) => router.handle_datagram(local, source, &contents, Instant::now()),
+                contents, len,
+            }) => router.handle_datagram(local, source, &contents[..len], Instant::now()),
             Ok(Input::ControlOpened(id, stream)) => {
                 router.control_generation = id;
                 set_sink(Some(stream));

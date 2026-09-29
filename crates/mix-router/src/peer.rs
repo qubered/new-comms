@@ -257,12 +257,27 @@ impl Peer {
 
     pub fn ports(&self) -> Vec<(String,bool,bool)> { self.tracks.iter().map(|t|(t.port_id.clone(),t.receive,t.send)).collect() }
     pub fn queue_stats(&self) -> serde_json::Value { serde_json::Value::Array(self.tracks.iter().filter(|t|t.receive).map(|t|serde_json::json!({"portId":t.port_id,"queueMs":t.rx.len() as f32/48.0,"targetMs":t.target as f32/48.0,"toc":t.toc})).collect()) }
-    pub fn take_port_frame(&mut self,id:&str,out:&mut [f32;FRAME]) -> bool { self.tracks.iter_mut().find(|t|t.port_id==id).is_some_and(|t|t.take(out)) }
-    pub fn take_frame(&mut self,out:&mut [f32;FRAME]) -> bool { self.tracks.first_mut().is_some_and(|t|t.take(out)) }
-    pub fn send_frame(&mut self,mix:&[f32;FRAME],now:Instant) {let id=self.pack_id.clone();self.send_port_frame(&id,mix,now);}
-    pub fn send_port_frame(&mut self,id:&str,mix:&[f32;FRAME],now:Instant) {
+    pub fn take_port_frames(&mut self, mut consume: impl FnMut(&str, [f32;FRAME])) {
+        if self.closed.is_some() {return;}
+        for track in &mut self.tracks {
+            let mut frame=[0.0;FRAME];
+            if track.take(&mut frame) {consume(&track.port_id,frame);}
+        }
+    }
+    pub fn send_port_frames(&mut self, now: Instant, mut mix: impl FnMut(&str, &mut [f32;FRAME])) {
         if !self.connected || self.closed.is_some() {return;}
-        let Some(track)=self.tracks.iter_mut().find(|t|t.port_id==id && t.send) else {return};
+        let mut frame=[0.0;FRAME];
+        for index in 0..self.tracks.len() {
+            if !self.tracks[index].send {continue;}
+            mix(&self.tracks[index].port_id,&mut frame);
+            self.send_track_frame(index,&frame,now);
+        }
+    }
+    pub fn take_frame(&mut self,out:&mut [f32;FRAME]) -> bool { self.tracks.first_mut().is_some_and(|t|t.take(out)) }
+    pub fn send_frame(&mut self,mix:&[f32;FRAME],now:Instant) {self.send_track_frame(0,mix,now);}
+    fn send_track_frame(&mut self,index:usize,mix:&[f32;FRAME],now:Instant) {
+        if !self.connected || self.closed.is_some() {return;}
+        let Some(track)=self.tracks.get_mut(index).filter(|t|t.send) else {return};
         track.downlink.extend_from_slice(mix);
         if track.downlink.len()<OPUS_FRAME {return;}
         let length=track.encoder.encode_float(&track.downlink,&mut track.packet);track.downlink.clear();

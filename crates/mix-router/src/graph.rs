@@ -20,7 +20,7 @@ pub struct PortConfig {
     #[serde(default)]
     pub triggers: Vec<Trigger>,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Station {
     pub master_volume: f32,
@@ -99,6 +99,7 @@ pub struct Graph {
     edges: Vec<Edge>,
     calls: Vec<Vec<usize>>,
     previous_calls: Vec<Vec<usize>>,
+    audible_sources: Vec<Vec<usize>>,
 }
 pub fn gain(db: f32) -> f32 { 10.0_f32.powf(db.clamp(-100.0,24.0) / 20.0) }
 impl Graph {
@@ -112,12 +113,18 @@ impl Graph {
             if let Gate::Trigger { port, .. } = &x.gate { if !indices.contains_key(port) { return Err("unknown gate owner".into()); } }
             edges.push(Edge { source, destination, gain: gain(x.level), gate: x.gate, role: x.role, open: false });
         }
+        let reply_targets: std::collections::HashSet<_> = configs.iter().filter(|p|matches!(p.kind.as_str(),"station"|"output")).map(|p|p.id.clone()).collect();
         let mut old: HashMap<_,_> = std::mem::take(&mut self.ports).into_iter().map(|p| (p.config.id.clone(),p)).collect();
         self.ports = configs.into_iter().map(|config| {
-            let state = PortState { port_id: config.id.clone(), master_volume: 100.0, ..Default::default() };
+            let state = PortState { port_id: config.id.clone(), master_volume: config.station.as_ref().map_or(100.0, |s|s.master_volume), volumes: config.station.as_ref().map_or_else(HashMap::new, |s|s.volumes.clone()), ..Default::default() };
             let mut p = old.remove(&config.id).unwrap_or(Port { config: config.clone(), state, attack_ms: 0.0, vox_energy: 0.0, vox_samples: 0, hang_ms: 0.0, loopback: false, reply: None });
             p.state.keys.retain(|key,_| config.triggers.iter().any(|t| if key == "reply" { t.kind == "reply" } else { t.kind == "key" && t.key.map(|n| n.to_string()) == Some(key.clone()) }));
-            if let Some(s) = &config.station { p.state.master_volume = s.master_volume; p.state.volumes = s.volumes.clone(); }
+            if let Some(s) = &config.station {
+                if p.config.station.as_ref().map(|old| old.master_volume) != Some(s.master_volume) { p.state.master_volume = s.master_volume; }
+                if p.config.station.as_ref().map(|old| &old.volumes) != Some(&s.volumes) { p.state.volumes = s.volumes.clone(); }
+            }
+            p.state.volumes.retain(|id,_| indices.contains_key(id));
+            if p.state.last_caller.as_ref().is_some_and(|id| !reply_targets.contains(id)) { p.state.last_caller=None; }
             p.config = config;
             p.reply = None;
             p
@@ -126,6 +133,7 @@ impl Graph {
         self.edges = edges;
         self.calls = vec![Vec::new(); self.ports.len()];
         self.previous_calls = self.calls.clone();
+        self.audible_sources = self.calls.clone();
         Ok(())
     }
     pub fn config(&self, id: &str) -> Option<&PortConfig> { Some(&self.ports[*self.indices.get(id)?].config) }
@@ -157,7 +165,7 @@ impl Graph {
     pub fn release(&mut self, id: &str) {
         for p in &mut self.ports {
             if p.config.id == id || p.config.hardware.as_ref().is_some_and(|h| h.node_id == id) {
-                p.state.keys.clear(); p.state.vox_open=false; p.attack_ms=0.0; p.hang_ms=0.0; p.loopback=false;
+                p.state.keys.clear(); p.state.vox_open=false; p.attack_ms=0.0; p.hang_ms=0.0; p.vox_energy=0.0; p.vox_samples=0; p.loopback=false;
             }
         }
     }
@@ -168,7 +176,7 @@ impl Graph {
                 let Some(&idx) = self.indices.get(port) else { return false };
                 let p=&self.ports[idx];
                 match trigger.kind.as_str() {
-                    "key" => trigger.key.is_some_and(|n| p.state.keys.get(&n.to_string()).copied().unwrap_or(false)),
+                    "key" => trigger.key.is_some_and(|n| p.state.keys.get(["", "1", "2", "3", "4", "5", "6"].get(n as usize).copied().unwrap_or("")).copied().unwrap_or(false)),
                     "reply" => p.state.keys.get("reply").copied().unwrap_or(false),
                     "vox" => p.state.vox_open,
                     "onCall" => on_call && !self.calls[idx].is_empty(),
@@ -203,6 +211,10 @@ impl Graph {
                 self.edges[i].open=self.gate_open(&self.edges[i].gate,true) && !self.ports[self.edges[i].source].state.mic_off;
             }
         }
+        // Record second-pass call indicators after all gates are resolved, so they cannot chain.
+        for e in &self.edges {
+            if e.open && e.role == "call" && !self.calls[e.destination].contains(&e.source) { self.calls[e.destination].push(e.source); }
+        }
         for destination in 0..self.ports.len() {
             for &caller in &self.calls[destination] {
                 if !self.previous_calls[destination].contains(&caller) {
@@ -210,11 +222,24 @@ impl Graph {
                     self.ports[destination].state.last_caller = if matches!(self.ports[caller].config.kind.as_str(),"station"|"output") { Some(self.ports[caller].config.id.clone()) } else { None };
                 }
             }
-            let audible: Vec<_>=self.edges.iter().filter(|e|e.destination==destination && e.open).map(|e|self.ports[e.source].config.id.clone()).collect();
-            if self.ports[destination].state.audible!=audible {self.ports[destination].state.audible=audible;}
-            let incoming: Vec<_>=self.calls[destination].iter().map(|&i|self.ports[i].config.id.clone()).collect();
-            if self.ports[destination].state.incoming != incoming { self.ports[destination].state.incoming=incoming; }
+            if !self.ports[destination].state.incoming.iter().map(String::as_str).eq(self.calls[destination].iter().map(|&i|self.ports[i].config.id.as_str())) {
+                self.ports[destination].state.incoming=self.calls[destination].iter().map(|&i|self.ports[i].config.id.clone()).collect();
+            }
             self.ports[destination].reply=self.ports[destination].state.last_caller.as_ref().and_then(|id|self.indices.get(id)).copied();
+        }
+        for sources in &mut self.audible_sources {sources.clear();}
+        for e in &self.edges {
+            if e.open && !self.audible_sources[e.destination].contains(&e.source) {self.audible_sources[e.destination].push(e.source);}
+        }
+        for (source,p) in self.ports.iter().enumerate() {
+            if let Some(destination)=p.reply {
+                if !p.state.mic_off && p.state.keys.get("reply").copied().unwrap_or(false) && !self.audible_sources[destination].contains(&source) {self.audible_sources[destination].push(source);}
+            }
+        }
+        for destination in 0..self.ports.len() {
+            if !self.ports[destination].state.audible.iter().map(String::as_str).eq(self.audible_sources[destination].iter().map(|&i|self.ports[i].config.id.as_str())) {
+                self.ports[destination].state.audible=self.audible_sources[destination].iter().map(|&i|self.ports[i].config.id.clone()).collect();
+            }
         }
     }
     fn add_source(&self,source:usize,listener:usize,frames:&HashMap<String,[f32;FRAME]>,out:&mut [f32;FRAME],scale:f32,depth:u8) {
@@ -300,6 +325,8 @@ mod tests {
         let mut g=setup(vec![config("a","station"),config("b","station"),config("c","station"),config("mic","input")],vec![edge("mic","b",key("a"),"audio"),edge("a","b",key("a"),"call"),edge("mic","c",json!({"port":"b","trigger":{"kind":"onCall"}}),"call"),edge("mic","a",json!({"port":"c","trigger":{"kind":"onCall"}}),"audio")]);
         let f=frames(&[("mic",0.2)]);g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.0);
         press(&mut g,"a",true);g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.2);assert_eq!(heard(&g,"c",&f),0.2);assert_eq!(heard(&g,"a",&f),0.0);
+        assert_eq!(g.state("c").unwrap().incoming,vec!["mic"]);
+        g.prepare(&f);assert_eq!(heard(&g,"a",&f),0.0);
     }
     #[test]
     fn ifb_dims_program_only_during_interrupt() {
@@ -314,8 +341,36 @@ mod tests {
         let mut g=setup(vec![config("a","station"),config("b","station"),config("c","station")],vec![edge("a","b",key("a"),"call"),edge("a","c",key("a"),"call")]);
         let f=frames(&[("a",0.2),("b",0.1)]);press(&mut g,"a",true);g.prepare(&f);
         assert_eq!(heard(&g,"b",&f),0.2);assert_eq!(heard(&g,"c",&f),0.2);assert_eq!(g.state("b").unwrap().last_caller.as_deref(),Some("a"));
-        assert!(g.apply("b",Message::Key{key:json!("reply"),on:true}));g.prepare(&f);assert_eq!(heard(&g,"a",&f),0.1);
+        assert!(g.apply("b",Message::Key{key:json!("reply"),on:true}));g.prepare(&f);assert_eq!(heard(&g,"a",&f),0.1);assert_eq!(g.state("a").unwrap().audible,vec!["b"]);
         g.apply("c",Message::Volume{source:"a".into(),volume:50.0});assert_eq!(heard(&g,"c",&f),0.1);
         g.release("a");g.prepare(&f);assert_eq!(heard(&g,"b",&f),0.0);
     }
+    #[test]
+    fn config_preserves_live_volumes_but_applies_manager_edits_and_drops_deleted_reply() {
+        let ports=vec![config("a","station"),config("b","station")];
+        let edges=vec![edge("a","b",key("a"),"call")];
+        let mut g=setup(ports.clone(),edges.clone());
+        press(&mut g,"a",true);g.prepare(&frames(&[("a",0.2)]));
+        g.apply("b",Message::MasterVolume{volume:42.0});
+        g.apply("b",Message::Volume{source:"a".into(),volume:23.0});
+        g.configure(serde_json::from_value(json!(ports)).unwrap(),serde_json::from_value(json!(edges)).unwrap()).unwrap();
+        assert_eq!(g.state("b").unwrap().master_volume,42.0);
+        assert_eq!(g.state("b").unwrap().volumes["a"],23.0);
+        let mut b=config("b","station");b["station"]["masterVolume"]=json!(75);
+        g.configure(serde_json::from_value(json!([b])).unwrap(),vec![]).unwrap();
+        assert_eq!(g.state("b").unwrap().master_volume,75.0);
+        assert!(g.state("b").unwrap().last_caller.is_none());
+        assert!(g.state("b").unwrap().volumes.is_empty());
+        g.prepare(&HashMap::new());assert!(g.state("b").unwrap().incoming.is_empty());
+    }
+    #[test]
+    fn duplicate_routes_have_one_audible_source_and_release_resets_vox_window() {
+        let mut g=setup(vec![config("a","station"),config("b","station")],vec![edge("a","b",key("a"),"call"),edge("a","b",json!("always"),"audio")]);
+        let f=frames(&[("a",0.2)]);press(&mut g,"a",true);g.prepare(&f);
+        assert_eq!(g.state("b").unwrap().audible,vec!["a"]);
+        g.release("a");g.prepare(&HashMap::new());g.prepare(&HashMap::new());
+        assert!(!g.state("a").unwrap().vox_open);
+        assert!(g.state("b").unwrap().incoming.is_empty());
+    }
+
 }

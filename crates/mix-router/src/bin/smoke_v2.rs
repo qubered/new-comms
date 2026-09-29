@@ -48,8 +48,9 @@ impl Harness {
     }
     fn send(&mut self,value:Value){writeln!(self.control,"{value}").unwrap();self.control.flush().unwrap();}
     fn configure(&mut self,edges:Vec<Value>){self.send(json!({"cmd":"configPorts","ports":ports(),"crosspoints":edges}));}
-    fn connect(&mut self,id:&str,directions:&[Direction]) {
-        let(mut client,offer,pending)=Client::new(id,directions,Arc::new(str0m::crypto::from_feature_flags()));self.send(json!({"cmd":"open","sessionId":id,"packId":id,"offer":offer,"candidateIp":"127.0.0.1"}));
+    fn connect(&mut self,id:&str,directions:&[Direction]) {self.connect_session(id,id,directions);}
+    fn connect_session(&mut self,id:&str,session:&str,directions:&[Direction]) {
+        let(mut client,offer,pending)=Client::new(id,directions,Arc::new(str0m::crypto::from_feature_flags()));self.send(json!({"cmd":"open","sessionId":session,"packId":id,"offer":offer,"candidateIp":"127.0.0.1"}));
         let deadline=Instant::now()+Duration::from_secs(10);let answer=loop {assert!(Instant::now()<deadline,"answer timeout");let event=self.events.recv_timeout(Duration::from_secs(2)).unwrap();assert_ne!(event["event"],"rejected","{event}");if event["event"]=="answer" {break event["sdp"].as_str().unwrap().to_string();}};
         client.rtc.sdp_api().accept_answer(pending,SdpAnswer::from_sdp_string(&answer).unwrap()).unwrap();self.clients.push(client);
     }
@@ -85,5 +86,25 @@ fn main(){
     let stats=loop {let e=h.events.recv_timeout(Duration::from_secs(2)).unwrap();if e["event"]=="stats" {break e;}};
     let q=stats["queues"].as_array().unwrap().iter().flat_map(|a|a.as_array().unwrap()).find(|q|q["portId"]=="a").unwrap();
     assert!(q["queueMs"].as_f64().unwrap()<=q["targetMs"].as_f64().unwrap()+15.0,"burst failed to drain in 900 ms: {q}");println!("ok: 80 ms packet burst drained in 900 ms ({q})");
+    // A gateway restart must preserve media and revoke the old control connection.
+    h.reset();h.configure(vec![edge("a","b",key("a",1),"call")]);
+    h.clients[0].tracks[0].amplitude=0.3;h.key(0,1,true);h.run(500);
+    let new_control=TcpStream::connect(h.control.peer_addr().unwrap()).unwrap();
+    let mut old_control=std::mem::replace(&mut h.control,new_control);
+    let reader=BufReader::new(h.control.try_clone().unwrap());let(tx,events)=mpsc::channel();
+    std::thread::spawn(move||{for line in reader.lines().map_while(Result::ok){if let Ok(event)=serde_json::from_str(&line){if tx.send(event).is_err(){break;}}}});
+    h.events=events;h.send(json!({"cmd":"hello"}));h.run(200);
+    assert!(h.events.try_iter().any(|e|e["event"]=="sync"),"reconnected gateway receives session sync");
+    writeln!(old_control,"{}",json!({"cmd":"close","sessionId":"a"})).unwrap();old_control.flush().unwrap();
+    h.run(400);assert!(h.clients[1].rms(0)>0.15,"old control must not close active session");
+    // A replacement station releases keys; late events from the old peer cannot re-key it.
+    h.connect_session("a","a-reconnected",&[Direction::SendRecv]);h.run(600);
+    assert!(h.clients[4].connected&&h.clients[4].channel.is_some());
+    assert!(h.clients[1].rms(0)<0.01,"replacement releases previous session's hot key");
+    h.clients[4].tracks[0].amplitude=0.3;h.key(4,1,true);h.run(600);
+    assert!(h.clients[1].rms(0)>0.15,"replacement station can key again");
+    h.send(json!({"cmd":"close","sessionId":"a-reconnected"}));h.run(600);
+    assert!(h.clients[1].rms(0)<0.01,"disconnect clears hot key and queued audio");
+    println!("ok: gateway reconnect, stale control rejection, station replacement and disconnect");
     println!("v2 smoke passed");
 }
