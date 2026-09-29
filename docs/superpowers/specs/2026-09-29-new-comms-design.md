@@ -1,46 +1,42 @@
 # new-comms — Design Spec (MVP)
 
-Status: **in progress** — checkpoint written mid-brainstorm at the user's request.
-Sections marked `[TBD]` have not been designed yet and will be added before this
-doc is considered final. Do not start implementation planning until all `[TBD]`
-sections are resolved and the user has approved the complete document.
+Status: **approved for implementation planning, 2026-09-29.**
+Interactive mockups that this spec describes live in `docs/design/mockups/`
+(`talk.html`, `manager.html`) and should be treated as the visual reference
+for §10 and §11.
 
 ## 1. Purpose
 
 A web-based party-line/PGM intercom system, in the spirit of RTS/Clear-Com/Riedel
 Artist/Bolero, built on the architecture proven by `a2-monitor` ("Pulse"):
 a real-time audio engine talking to physical hardware, a web backend, and
-browser-based clients. Operators open a web page on a phone or laptop over
-WiFi, pick their identity ("pack"), and talk on assigned comms channels using
-PTT or latch. A separate manager app configures packs, channels, and hardware
-patches, similar in spirit to a Riedel Artist configuration frame.
+browser-based clients. Crew open a web page on a phone or laptop over WiFi,
+pick their identity ("pack"), and talk on assigned comms channels using PTT
+or latch. A separate manager app configures packs, channels, and hardware
+nodes, similar in spirit to a Riedel Artist configuration frame.
 
-## 2. Scope for this spec
+## 2. Scope
 
 - **Single site only.** One comms-gateway serving one physical location.
-  Multi-site linking (trunking multiple physical locations together) is an
-  explicit, intentional non-goal of this spec — the protocol and channel model
-  should not be *blocked* from a future multi-site design, but nothing here
-  builds it.
-- **Deployment**: runs on a local WiFi network. No cloud/internet dependency
-  required for the MVP. Remote/VPN access is not designed here.
-- **Trust model**: the LAN itself is the security boundary. No user accounts,
-  no mandatory authentication anywhere in the system.
-- MVP feature cut-list (what's explicitly deferred vs. included): **[TBD]** —
-  next section to design.
+  Multi-site linking (trunking several locations together) is an explicit
+  non-goal of this spec. The protocol and channel model must not be
+  *blocked* from a future multi-site design, but nothing here builds it.
+- **Deployment**: local WiFi network. No cloud/internet dependency for the
+  MVP. Remote/VPN access is not designed here.
+- **Trust model**: the LAN is the security boundary. No user accounts and no
+  mandatory authentication anywhere in the system.
+- The full in/out list for the MVP is in §13.
 
 ## 3. Architecture overview
 
-Three logical components, all peers of a central gateway over the network —
-no component spawns another as a child process (this differs from
-a2-monitor's local child-process model, because comms hardware may live on
-entirely separate physical devices from the gateway):
+Three logical components, all network peers of a central gateway. No
+component spawns another as a child process (unlike a2-monitor's local
+child-process model) because comms hardware may live on separate boxes.
 
 ```
                          ┌─────────────────────────────┐
                          │        comms-gateway         │
                          │        (Node/Fastify)        │
-                         │                               │
                          │ - pack/channel/keying state   │
                          │ - REST control API (config)   │
                          │ - SSE state sync (rev+delta)  │
@@ -71,13 +67,12 @@ entirely separate physical devices from the gateway):
            │ = one "pack"     │  │ = one "pack"     │  │ cpal I/O bound to  │
            └──────────────────┘  └──────────────────┘  │ a physical circuit │
                                                          │ = one "pack",     │
-                                                         │ always-latched    │
+                                                         │ always keyed      │
                                                          └─────────┬─────────┘
                                                                    │
                                                             ┌──────▼──────┐
                                                             │   audio      │
                                                             │  interface   │
-                                                            │ (XLR in/out) │
                                                             └──────────────┘
 
            ┌──────────────────┐
@@ -86,70 +81,33 @@ entirely separate physical devices from the gateway):
            └──────────────────┘
 ```
 
-**Components:**
+**Components**
 
 - **comms-gateway** (Node/Fastify): owns all durable state (packs, channels,
-  assignments, live connected/keyed status), exposes REST for manager
-  config and WebRTC signaling negotiation, exposes SSE for state broadcast.
-  Owns no audio hardware and does not itself terminate media.
-- **mix-router** (Rust sidecar, one instance for the whole gateway):
-  terminates WebRTC/Opus for every peer (str0m, adapted from a2-monitor's
-  media-worker), performs real-time per-pack N-1 mixing, and receives
-  keying/volume control messages over each peer's WebRTC data channel.
-  Told about state changes by comms-gateway over a local control channel
-  (line-delimited JSON, same IPC pattern a2-monitor already validated —
-  audio itself never crosses that channel).
-- **Talk app** (React PWA): phone/browser client. Pick a pack, see assigned
-  channels, PTT/latch/toggle controls, hear personalized mix.
+  assignments) and live status (connected, keyed, mic off, PGM muted).
+  Exposes REST for manager config and WebRTC signaling negotiation, SSE for
+  state broadcast. Owns no audio hardware and does not terminate media.
+- **mix-router** (Rust sidecar, one per gateway): terminates WebRTC/Opus for
+  every peer (str0m, adapted from a2-monitor's media-worker), performs
+  real-time per-pack N-1 mixing, and receives keying/volume/mic control
+  messages over each peer's WebRTC data channel. Told about config changes
+  by comms-gateway over a local control channel (line-delimited JSON, the
+  IPC pattern a2-monitor already validated; audio never crosses it).
+- **Talk app** (React PWA): phone/browser client. Pick a pack, see its keys,
+  key channels, hear a personalized mix.
 - **comms-node** (Rust daemon, cpal-based, adapted from a2-monitor's
   `audio-host-api`): headless WebRTC client bridging one physical audio
-  circuit into the system. Functionally a "pack bound to hardware instead
-  of a browser." Runs on any box on the network, including possibly the
-  same machine as comms-gateway — no architectural distinction.
-- **Manager app** (React SPA): admin CRUD for packs/channels/assignments/
-  hardware node config, plus a live status dashboard.
+  circuit into one channel. Functionally "a pack bound to hardware instead
+  of a browser." Runs on any box on the network, including the gateway's.
+- **Manager app** (React SPA): configure packs, channels and hardware nodes;
+  watch live status.
 
 Rationale for reusing a2-monitor's stack: it already solved the two hardest
-problems here — real-time-safe audio device I/O via cpal behind a
-project-owned trait boundary, and low-latency browser audio transport via
-str0m/WebRTC/Opus (ICE-lite, WHEP-style signaling, no trickle ICE, 10ms
-CELT-only frames) — validated with real latency measurement. Rebuilding
-either in a different stack for the MVP would be re-solving a solved
-problem.
+problems (real-time-safe device I/O via cpal behind a project-owned trait
+boundary, and low-latency browser audio via str0m/WebRTC/Opus with
+ICE-lite, WHEP-style signaling, 10 ms CELT-only frames) and measured them.
 
 ## 4. Data model
-
-### Pack
-A client identity — human or hardware.
-
-```
-Pack {
-  id: string
-  name: string
-  type: "human" | "hardware"
-  pin?: string              // optional; if set, Talk app requires PIN to select this pack
-  masterVolume: number      // 0-100, operator-adjustable overall output level
-  channels: PackChannel[]
-}
-
-PackChannel {
-  channelId: string
-  mode: "ptt" | "latch" | "auto"   // manager-set; meaningful for partyline/direct only
-  pgmListen: "always" | "toggle"   // manager-set; meaningful for pgm only
-  volume: number                    // 0-100, operator-adjustable, this channel's level in the pack's personal mix
-}
-```
-
-Runtime-only state (not manager-configured; broadcast live via SSE, not
-stored as config):
-```
-PackLiveState {
-  packId: string
-  connected: boolean
-  keyed: { [channelId: string]: boolean }
-  pgmOn: { [channelId: string]: boolean }   // only for pgmListen: "toggle" channels
-}
-```
 
 ### Channel
 
@@ -157,200 +115,266 @@ PackLiveState {
 Channel {
   id: string
   name: string        // key heading, shown large on the Talk app key
-  subText?: string    // optional small line under the heading (who's on it, what it's for)
+  subText?: string    // small line under the heading (who's on it, what it's for)
   type: "partyline" | "direct" | "pgm"
-  members: string[]   // pack ids; UI enforces exactly 2 for "direct"
+  members: string[]   // pack ids; exactly 2 for "direct"
 }
 ```
 
-The Talk app key shows only `name` and `subText`. The key's behaviour
-(`mode`, see §5) is configured per pack in the Manager and is **not**
-printed on the key.
+- **partyline**: standing multi-way conference; keyed members hear an N-1
+  mix of each other.
+- **direct**: identical mechanics, exactly 2 members, a standing private
+  line (not ad-hoc dialing). Each side's key shows the *other* pack's name
+  as its heading; `subText` is shared.
+- **pgm**: listen-only. Nobody can talk into it. Its audio comes from
+  hardware nodes assigned to it ("feed").
 
-- **partyline**: standing multi-way conference. All currently-keyed members
-  hear an N-1 mix of each other.
-- **direct**: identical mixing mechanics, capped at exactly 2 members — a
-  standing "private line" (not ad-hoc dialing; that's a v2 feature).
-- **pgm**: listen-only. Members with `pgmListen: "always"` always hear it;
-  members with `pgmListen: "toggle"` get a mute/unmute control. No talk
-  capability on pgm channels at all — no keying UI, mode field unused.
+### Pack
 
-### Hardware patch
+```
+Pack {
+  id: string
+  name: string
+  type: "human" | "hardware"
+  pin?: string              // optional; Talk app asks for it before this pack can be picked
+  masterVolume: number      // 0-100, operator-adjustable, persisted per pack
+  keys: PackKey[]           // ORDERED: this is the key layout on the phone
+}
 
-Not a separate data structure — a hardware patch is just a `Pack` with
-`type: "hardware"`, assigned to a channel like any other pack. Its physical
-binding (which cpal device, which capture/playback channel indices) is
-local configuration on the `comms-node` daemon itself, associated with its
-`packId` at registration time (see §7).
+PackKey {
+  channelId: string
+  mode: "ptt" | "latch" | "auto"   // manager-set; partyline/direct only
+  pgmListen: "always" | "toggle"   // manager-set; pgm only
+  volume: number                    // 0-100, operator-adjustable, persisted
+}
+```
+
+A hardware pack has exactly one key (the channel it bridges). On a
+partyline/direct channel it is permanently keyed; on a pgm channel it is the
+feed.
+
+Runtime-only state (broadcast via SSE, not stored as config):
+
+```
+PackLiveState {
+  packId: string
+  connected: boolean
+  client?: string                        // e.g. "iPhone, Safari"; hardware: address
+  micOff: boolean                        // pack-wide mic kill
+  keyed: { [channelId]: boolean }
+  pgmOn: { [channelId]: boolean }        // only for pgmListen: "toggle"
+}
+```
+
+The Talk app key shows only `name` and `subText`. The key's `mode` is
+configured in the Manager and is **never printed on the key**.
 
 ## 5. Keying semantics
 
-Manager sets `mode` per pack-channel assignment; **the operator cannot
-override it** (no per-session PTT/latch switch in the Talk app UI).
+Manager sets `mode` per pack key; the operator cannot override it.
 
-- `ptt`: hold to talk, release to stop. Simple momentary key.
-- `latch`: press to key on, press again to key off.
-- `auto`: hold-to-talk like `ptt`; but a **quick tap** (below a short
-  threshold, ~350ms) instead **toggles latch on**. While latched, a tap
-  turns it back off. This is the classic "tap to latch, hold to talk"
-  beltpack behavior found on real intercom panels.
+- `ptt`: hold to talk, release to stop.
+- `latch`: tap to key on, tap again to key off.
+- `auto`: hold-to-talk like `ptt`; a **quick tap** (< ~350 ms) instead
+  **latches on**; while latched, a tap turns it off.
 
-The tap-vs-hold interpretation for `auto` is **client-side UI logic only**
-(timing a press/release). Regardless of mode, the only thing that ever
-reaches the server is a simple boolean: "pack X is now keyed on/off channel
-Y." This keeps the mixing engine mode-agnostic — `mix-router` never needs
-to know which mode produced a given keying event.
+Tap-vs-hold interpretation is client-side only. The server only ever sees
+"pack X keyed on/off channel Y" as a boolean, so `mix-router` stays
+mode-agnostic. A pointer cancel or loss of pointer capture must release a
+`ptt` key.
 
-Hardware nodes are typically configured `mode: "latch"` and left
-permanently keyed on by the manager (no human present to press a button),
-though nothing prevents other modes if a use case calls for it.
+**Mic kill**: a pack-wide `micOff` toggle in the Talk app. Turning it on
+drops every keyed channel and blocks keying until turned off. It is shown
+on the pack's live state.
 
-## 6. Audio engine & mixing behavior
+**Connection loss**: while connecting or reconnecting, keys are disabled and
+any keyed channel is dropped server-side and client-side. The Talk app
+shows a banner saying keys are off until the connection is back.
 
-- **Passive listen, active talk**: a pack continuously hears a live mix of
-  every channel it's assigned to (including `pgm`), regardless of its own
-  keyed state. Keying only controls whether *that pack's own mic* is added
-  into a channel's mix for others.
-- **Multi-channel keying**: a pack may be keyed into more than one assigned
-  channel simultaneously — this falls out naturally from the model and is
-  not specially restricted.
-- **N-1 mixing**: for each channel a pack is keyed into, it hears every
-  *other* currently-keyed member on that channel, never its own audio back
-  (standard anti-echo behavior). A pack's single outbound downstream stream
-  is the sum of what it should hear across *all* its assigned channels —
-  one combined WebRTC audio track per pack, not one per channel.
-- **pgm channels**: members are always-contributing sources (typically one
-  `comms-node` hardware input); listeners never contribute back into it,
-  regardless of pgmListen setting (pgmListen only controls whether the
-  listener hears it, never whether they can talk into it — pgm is never
-  talkable).
-- **direct channels**: identical mixing math to partyline, just capped at
-  2 members.
-- **Volume application**: each pack's personal per-channel `volume` is
-  applied as a gain stage on that channel's contribution to the pack's
-  personal mix; `masterVolume` is applied once, after all channels are
-  summed, as a final gain stage. No per-source (per-talker) gain trim in
-  the MVP — that's an a2-monitor "feed" feature we are explicitly not
-  carrying over yet.
-- **Latency target**: reuse a2-monitor's proven low-delay chain — 48kHz,
-  10ms CELT-only Opus frames, no DTX/FEC, ICE-lite, WHEP-style signaling,
-  no trickle ICE. Target **<150ms mic-to-ear on LAN WiFi**, to be validated
-  the same way a2-monitor validated it (physical impulse latency test).
+## 6. Audio engine & mixing
+
+- **Passive listen, active talk**: a pack continuously hears every channel
+  on its keys (including pgm), regardless of its own keyed state. Keying
+  only controls whether its mic is added into a channel for others.
+- **Multi-channel keying** is allowed: a pack may be keyed on several
+  channels at once.
+- **N-1 mixing**: on each channel a pack is keyed into it hears every other
+  keyed member, never itself. One combined downstream track per pack.
+- **pgm**: hardware feed(s) are always contributing; listeners never
+  contribute. `pgmListen: "toggle"` only mutes the listener's own copy.
+- **Volume**: per-key `volume` is a gain on that channel's contribution to
+  the pack's personal mix; `masterVolume` is a final gain after summing.
+  No per-talker gain trim in the MVP.
+- **Latency target**: 48 kHz, 10 ms CELT-only Opus, no DTX/FEC, ICE-lite,
+  WHEP-style signaling, no trickle ICE. Target **< 150 ms mic-to-ear on LAN
+  WiFi**, validated with a physical impulse test as a2-monitor did.
 
 ## 7. State sync & control protocol
 
-Reuses a2-monitor's proven split rather than inventing a new one, with one
-deliberate change: real-time control (keying/volume) rides the WebRTC
-connection itself rather than a separate HTTP/WebSocket channel, for lowest
-latency and simplest connection-health story.
-
-- **Format**: JSON Schema-authoritative contracts, generated TS types
-  shared by both apps and the gateway (mirrors a2-monitor's
-  `packages/protocol` pattern).
-- **Global state read path** (not latency-critical — a few hundred ms is
-  invisible for "who else is connected/keyed" UI):
-  - `GET /api/v1/state` — full snapshot (packs, channels, live
-    connected/keyed status, revision number).
-  - `GET /api/v1/events` — SSE stream: full snapshot once, then
-    revision-gated deltas; a client that falls behind (buffer overrun)
-    gets a full resend instead of a delta.
-- **Real-time control path** (latency-critical, per-pack): sent as small
-  JSON messages over a **reliable, ordered WebRTC data channel**, part of
-  the same peer connection already carrying that pack's audio, straight to
-  `mix-router` (which already terminates that connection):
-  - `{ type: "key", channelId, on: boolean }`
+- **Format**: JSON Schema-authoritative contracts with generated TS types
+  shared by both apps and the gateway (a2-monitor's `packages/protocol`
+  pattern).
+- **Global state** (not latency-critical):
+  - `GET /api/v1/state` — full snapshot (channels, packs, live state,
+    revision).
+  - `GET /api/v1/events` — SSE: full snapshot once, then revision-gated
+    deltas; a client that falls behind gets a full resend.
+  - The Talk app uses this to show **who is keyed on each of its keys**
+    (talker name + level indication) and its own connection state.
+- **Real-time control** (latency-critical, per pack) over a **reliable,
+  ordered WebRTC data channel** on the same peer connection as the audio,
+  terminated by `mix-router`:
+  - `{ type: "key", channelId, on }`
+  - `{ type: "micOff", on }`
   - `{ type: "volume", channelId, volume }`
   - `{ type: "masterVolume", volume }`
-  - `{ type: "pgmListen", channelId, on: boolean }`
-  Reliable-ordered delivery is required — losing a "key off" message must
-  never leave a channel stuck open.
-  - Rationale for choosing a WebRTC data channel over a second REST/WS
-    connection: it rides the already-negotiated ICE/DTLS session (no new
-    handshake per press, inherits that connection's NAT traversal and
-    health monitoring), and avoids a second connection lifecycle to manage
-    and reconnect independently of the audio session.
-- **Manager CRUD** (low-frequency, config-time, not latency-sensitive):
-  plain REST — `POST/PATCH/DELETE /api/v1/packs`, `/api/v1/channels`, etc.
-- **WebRTC signaling** (one-time per session setup, not the hot path):
-  WHEP-style HTTP offer/answer — `POST /api/v1/media/sessions { packId,
-  offer }` → `{ sessionId, answer }`; `DELETE /api/v1/media/sessions/:id`
-  to disconnect. Used identically by the Talk app and by `comms-node`
-  hardware daemons.
+  - `{ type: "pgmListen", channelId, on }`
+  Reliable-ordered delivery is required: a lost "key off" must never leave
+  a channel open. Rationale for a data channel over a second REST/WS
+  connection: it rides the already-negotiated ICE/DTLS session and has no
+  separate lifecycle to reconnect.
+- **Manager CRUD** (config-time): plain REST — `POST/PATCH/DELETE
+  /api/v1/packs`, `/api/v1/channels`; pack keys are an ordered array on the
+  pack.
+- **WebRTC signaling**: WHEP-style HTTP — `POST /api/v1/media/sessions
+  { packId, offer }` → `{ sessionId, answer }`; `DELETE
+  /api/v1/media/sessions/:id`. Same for Talk app and comms-node.
 
 ## 8. Hardware node registration
 
-A `comms-node` on first connect calls `POST /api/v1/nodes/register
-{ deviceName, availableChannels }`. The gateway creates (or matches) a
-`Pack` with `type: "hardware"` and returns its `packId`. The Manager app's
-"Hardware nodes" view is simply packs of `type: "hardware"` filtered out,
-showing registration/connectivity status and capture/playback channel
-config. No separate pairing UI — plug it in, it appears, the manager
-assigns it to a channel like any other pack.
+A `comms-node` calls `POST /api/v1/nodes/register { deviceName,
+availableInputs, availableOutputs, address }` on connect. The gateway
+creates (or matches) a `Pack` of `type: "hardware"` and returns its
+`packId`. The node's capture input and playback output are chosen in the
+Manager and pushed to the node over its data channel. No pairing UI: a node
+pointed at the gateway appears in the Manager.
 
-## 9. Authentication / access control
+## 9. Access control
 
-- **No mandatory authentication anywhere.** The LAN itself is the trust
-  boundary for the MVP.
-- **Pack PIN (optional)**: manager may set `Pack.pin`; if set, the Talk
-  app's pack picker requires entering it before that pack can be selected.
-  If unset (default), tapping the pack works immediately.
-- **Manager app**: no passphrase gate at all — fully open on the LAN.
-  (Considered and explicitly rejected for MVP; revisit if deployed beyond
-  a single trusted network.)
+- No mandatory authentication. The LAN is the trust boundary.
+- **Pack PIN (optional)**: if `Pack.pin` is set, the Talk app asks for it
+  before that pack can be picked.
+- **Manager app**: fully open on the LAN for the MVP (considered and
+  rejected for now; revisit if deployed beyond one trusted network).
 
 ## 10. Client apps
 
-### Talk app (React PWA, phone/browser)
+Reference: `docs/design/mockups/talk.html` and `manager.html`.
 
-1. **Pack picker**: list of packs (name + icon); PIN-protected packs show
-   an inline numeric PIN pad on tap, others select instantly.
-2. **Main screen**: one row per assigned channel.
-   - `partyline`/`direct`: large key control, visual style reflects
-     `mode` (e.g. "HOLD" label for `ptt`, toggle-pill for `latch`/`auto`),
-     red/glowing when keyed. Expandable per-channel volume slider.
-   - `pgm`: no key control — either nothing (`always`) or a mute/unmute
-     toggle (`toggle`), plus the same volume slider.
-   - Persistent master volume control, always visible.
-   - Connection status indicator (connected / reconnecting).
-3. Single-column layout on phone portrait; denser 2-column layout on
-   tablet/landscape for higher channel counts.
+### Talk app (React PWA, phone first)
 
-### Manager app (React SPA, admin)
+Shared chrome on every screen: a thin top bar with a connection dot and the
+system name ("Stage A"), the time, and a menu.
 
-1. **Live status** (default landing page): table of all packs —
-   connection dot, name, type, currently-keyed channel(s), live via SSE.
-2. **Packs**: list + detail editor (name, type, PIN, channel assignments
-   with mode/pgmListen/volume defaults).
-3. **Channels**: list + detail editor (name, type, members); `direct`
-   type enforces exactly 2 members in the UI.
-4. **Hardware nodes**: packs of `type: "hardware"`, showing
-   registration/connectivity status and capture/playback channel config.
+1. **Choose your pack**: 2-column grid of tiles, one per pack: name, the
+   channels it carries as sub text, a small PIN marker if one is set.
+   Hardware packs are listed under a "Hardware" heading, dimmed and **not
+   selectable**. Tapping a PIN-protected pack opens a numeric PIN pad.
+2. **Keys**: a row with the pack name and a **Levels** toggle, then a
+   2-column grid of keys in the pack's key order. Each key: a thin colour
+   strip on top for the channel type, the channel **heading** (large), the
+   **sub text** (small). Nothing about the mode is printed.
+   - Idle: as above. When someone else is keyed on that channel, the key
+     shows their name with a small green level indication.
+   - Hot (this pack keyed): the whole key turns flat red, white text, with a
+     small level meter and the word "Talking" (or "Latched").
+   - pgm `always`: no control; sub text "Listen" if none set.
+   - pgm `toggle`: the key toggles the listener's own feed on/off and shows
+     "Listening" / "Off".
+   - While connecting/reconnecting or with mic off, keys are dimmed and
+     inert; a banner explains why.
+3. **Levels mode**: every key swaps its content for its own volume slider
+   and value; keys do not key in this mode. This is the only place
+   per-channel volume is edited (nothing inside a key can be tapped by
+   accident while mixing).
+4. **Dock** (always visible): **Mic** button (Mic on / Mic off; off is
+   amber-filled) and the master **Volume** slider with its value.
 
-## 11. UI/UX design direction
+### Manager app (React SPA, laptop)
 
-- **Visual language**: dark-mode-first, high-contrast, pro-audio/broadcast
-  tool aesthetic (same family as a2-monitor), not a consumer chat-app
-  style — this is a tool glanced at quickly during a live show.
-- **Color coding by channel type**, consistent across both apps: partyline
-  = one accent (e.g. blue), direct/private = a distinct accent (e.g.
-  purple), pgm = a third (e.g. amber). **Keyed/live state is always red**
-  regardless of channel type — the universal "mic is hot" signal, never
-  overloaded with anything else.
-- Detailed pixel-level layout/spacing/component work is deferred to
-  implementation time (frontend-design skill), not specified further here.
+Left nav: Live, Packs, Channels, Hardware. Footer shows gateway address,
+mixer health/latency, and online count.
 
-## 12. Explicitly out of scope for MVP
+1. **Live**: one-line summary ("8 of 10 packs online, 2 keyed"), then a
+   **read-only** matrix: packs down the side (people, then a Hardware
+   group), channels across the top (name + sub text). Cells show the key
+   behaviour word, "Talking" in red when keyed, "Feed" for a hardware
+   source, struck-out when a pack has muted a pgm feed. Clicking a pack
+   name opens it in Packs. Beside the matrix: **Needs attention** (offline
+   hardware node; pack with no keys; direct line without exactly two
+   packs; pgm channel with no feed — each with an Open link) and **Talking
+   now** (pack, channel, elapsed).
+2. **Packs**: master/detail. List grouped People / Hardware with an online
+   dot and key count. Editor: inline-editable name, type, online status
+   with client; for people: optional PIN toggle and starting volume; for
+   hardware: device, input and output selects. **Keys** section: a table of
+   only the channels this pack has, in order (#, channel with sub text,
+   behaviour select, level, move up/down, remove), an **Add channel** button
+   offering only channels not yet on the pack, and a **phone preview** on
+   the right rendering exactly what that pack sees (keys light red live).
+   New pack, Remove pack.
+3. **Channels**: master/detail. Editor: inline-editable heading, type
+   switch (Partyline / Direct / PGM), sub text with a key preview, and
+   "Who's on it" as chips with an add select. Rule text: direct lines need
+   exactly two packs (error state otherwise); pgm shows its feed or "no
+   feed yet". New channel, Remove channel.
+4. **Hardware**: a card per node — name, online/last seen, device,
+   address, input/output selects, channel, Open pack. A note that there is
+   nothing to pair.
 
-- Multi-site linking/trunking (see §2).
-- Ad-hoc/dial-style direct calls (only standing `direct` channels for MVP).
-- Per-source (per-talker) gain trim within a mix (only per-channel and
-  master volume for the listener).
-- User accounts / role-based access control.
-- Remote/VPN access beyond the local WiFi network.
+## 11. UI/UX direction
 
-## 13. Open items
+- **Plain, not designed.** The platform/system font, sentence case, full
+  names (no abbreviations), no monospace or tracked-uppercase labels, no
+  glows, no decorative cards. This was an explicit correction during
+  design review and is the register for both apps.
+- **Dark by design.** Single dark theme, high contrast (backstage, trucks,
+  FOH). Neutral greys with a slight cool bias.
+- **Colour means something.** A thin strip per channel type (partyline
+  blue, direct violet, pgm amber). **Red means one thing only: this pack's
+  mic is hot.** Green is audio present / online. Amber is warning
+  (reconnecting, mic off).
+- **Keys look like keys**: solid tiles, large heading, small sub text,
+  2-column grid, minimum 44 pt targets, `touch-action: none` on keys.
+- Copy: short, plain verbs; errors say what happened and what to do, no
+  apologies.
 
-- **[TBD] MVP feature cut-list**: a full pass over the above to explicitly
-  confirm what ships in v1 vs. is deferred, beyond what's already listed in
-  §12. Not yet designed.
-- Any further sections raised before this spec is finalized.
+## 12. Non-goals / deferred
+
+- Multi-site linking/trunking.
+- Ad-hoc/dial-style calls, ringing, "reply to last caller".
+- Call/cue signalling (Green-GO-style call flash, cue lights), GPIO/tally.
+- Per-talker gain trim within a mix.
+- User accounts, roles, Manager passphrase.
+- Remote/VPN access.
+- Recording/playback, logging of audio.
+- Drag-and-drop key ordering (arrows are enough for MVP).
+- Custom key colours per pack; themes.
+- Gateway redundancy/failover.
+
+## 13. MVP cut-list
+
+**In v1**
+
+- comms-gateway: channels/packs CRUD, ordered keys, live state, SSE
+  snapshot+delta, WHEP signaling, node registration, JSON Schema contracts.
+- mix-router: str0m WebRTC termination, per-pack N-1 mixing across
+  partyline/direct/pgm, per-key and master volume, mic kill, data-channel
+  control, control channel from gateway.
+- comms-node: cpal capture/playback on a chosen input/output, WebRTC client
+  to the gateway, registers itself, permanently keyed / feed.
+- Talk app: pack picker with optional PIN, keys screen with all states in
+  §10, Levels mode, mic kill, master volume, talker-on-key from SSE,
+  connecting/reconnecting handling, installable PWA.
+- Manager app: Live (read-only matrix, Needs attention, Talking now),
+  Packs, Channels, Hardware as in §10.
+- Latency validation: a repeatable mic-to-ear measurement on LAN WiFi
+  against the < 150 ms target.
+
+**Known risks to plan for (not features)**
+
+- iOS Safari: audio requires a user gesture (the pack tap is it), and a
+  backgrounded tab will lose audio; the Talk app should keep the screen
+  awake while on the keys screen and make reconnect fast.
+- Phones on WiFi drop packets in bursts; the reconnect path (§5) must be
+  boring and reliable, and latches must never survive a reconnect.
