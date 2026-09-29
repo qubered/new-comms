@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Talk — Comms prototype</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen phone app. Header (status + pack), a 2-column grid of channel "keys" with a tally strip,
+   and a fixed dock holding mic kill + master volume. Single dark look by design (backstage tool). */
+:root{
+  color-scheme:dark;
+  --bg:#0B0D10; --surface:#13161B; --raised:#1B1F26; --line:#2A3039; --line-2:#3B4350;
+  --fg:#ECEEF1; --fg-2:#A3ABB7; --fg-3:#6B7480;
+  --tally:#FF2E3B; --tally-dim:#2A1013; --tally-glow:rgba(255,46,59,.42);
+  --pl:#4A93FF; --direct:#B98BFF; --pgm:#F5C542;
+  --live:#3DDC84; --warn:#FFA033;
+  --tape:#F1EDE3; --tape-ink:#121417;
+  --display:'Barlow Condensed',"Arial Narrow",Arial,sans-serif;
+  --body:'Barlow',system-ui,-apple-system,Segoe UI,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 var(--body);-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--pl);outline-offset:2px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.eyebrow{font:600 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3)}
+
+/* Stage: full viewport on phones, phone frame + notes panel on wide screens */
+.stage{height:100%;display:flex;align-items:center;justify-content:center;gap:40px;padding:0}
+.phone{position:relative;width:100%;height:100%;background:var(--bg);overflow:hidden}
+.side{display:none}
+@media (min-width:760px){
+  .stage{padding:24px}
+  .phone{width:390px;height:min(844px,calc(100vh - 48px));border:1px solid var(--line-2);border-radius:44px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .side{display:flex;flex-direction:column;gap:18px;width:300px;color:var(--fg-2)}
+  .side h1{font:600 30px/1 var(--display);letter-spacing:.02em;color:var(--fg);margin:0;text-transform:uppercase}
+  .side p{margin:0;font-size:14px}
+  .side .group{display:flex;flex-direction:column;gap:8px}
+  .side .btn{display:block;text-align:left;background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-weight:500;color:var(--fg)}
+  .side .btn:hover{border-color:var(--line-2)}
+  .side kbd{font-family:var(--mono);font-size:12px;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+}
+
+/* Screens */
+.screen{position:absolute;inset:0;display:none;flex-direction:column}
+.screen.on{display:flex}
+.scroll{flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+
+/* Picker */
+.hdr{padding:calc(18px + env(safe-area-inset-top,0px)) 20px 12px;display:flex;flex-direction:column;gap:6px}
+.hdr h1{margin:0;font:600 34px/1 var(--display);letter-spacing:.01em}
+.hdr .sub{color:var(--fg-2);font-size:14px}
+.packs{padding:6px 14px calc(24px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px}
+.sect{padding:16px 6px 4px}
+.pack{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-height:66px}
+.pack:active{background:var(--raised)}
+.pack .meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.pack .chs{color:var(--fg-2);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pack .lock{color:var(--fg-3);font-family:var(--mono);font-size:11px;letter-spacing:.1em;display:flex;align-items:center;gap:6px}
+.pack .chev{color:var(--fg-3);font-size:22px;line-height:1}
+.pack.hw{opacity:.6}
+.pack.hw .tape{background:#C9C5BB}
+.tape{display:inline-block;align-self:flex-start;background:var(--tape);color:var(--tape-ink);font:700 17px/1 var(--display);letter-spacing:.07em;text-transform:uppercase;padding:7px 10px 6px;border-radius:2px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tape.sm{font-size:13px;padding:5px 8px 4px}
+
+/* PIN */
+.pin{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:20px}
+.pin .who{display:flex;flex-direction:column;align-items:center;gap:10px}
+.dots{display:flex;gap:14px;height:16px}
+.dots i{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--fg-3)}
+.dots i.f{background:var(--fg);border-color:var(--fg)}
+.dots.err i{border-color:var(--tally)}
+.pin .msg{min-height:20px;color:var(--warn);font-size:14px}
+.pad{display:grid;grid-template-columns:repeat(3,76px);gap:12px}
+.pad button{height:64px;border-radius:14px;background:var(--raised);border:1px solid var(--line);font:500 26px/1 var(--display)}
+.pad button:active{background:var(--line)}
+.pad .ghost{background:none;border-color:transparent;font:500 14px/1 var(--body);color:var(--fg-2);letter-spacing:.06em;text-transform:uppercase}
+
+/* Talk: top bar */
+.top{padding:calc(12px + env(safe-area-inset-top,0px)) 14px 10px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);background:var(--bg)}
+.status{display:flex;align-items:center;gap:8px;font:500 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--fg-2);min-width:0}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--live);box-shadow:0 0 10px var(--live);flex:none}
+.status.wait .dot,.status.warn .dot{background:var(--warn);box-shadow:0 0 10px var(--warn);animation:blink 1s steps(2) infinite}
+.status.off .dot{background:var(--fg-3);box-shadow:none}
+@keyframes blink{50%{opacity:.35}}
+.top .spacer{flex:1}
+.chip{height:36px;padding:0 12px;border-radius:9px;border:1px solid var(--line-2);font:600 12px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--fg-2);display:inline-flex;align-items:center;gap:6px}
+.chip.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chip.icon{width:36px;padding:0;justify-content:center;font-size:16px}
+.banner{display:none;background:#2B1F0E;color:var(--warn);border-bottom:1px solid #4A3512;padding:10px 14px;font-size:14px;font-weight:500}
+.banner.on{display:block}
+.packbar{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 4px}
+.packbar .hint{color:var(--fg-3);font-size:12px}
+
+/* Keys */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 12px calc(122px + env(safe-area-inset-bottom,0px))}
+.key{position:relative;--accent:var(--pl);min-height:150px;border-radius:16px;background:var(--raised);border:1px solid var(--line);padding:16px 13px 12px;display:flex;flex-direction:column;gap:6px;overflow:hidden;
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;cursor:pointer;
+  transition:background .08s,border-color .08s,box-shadow .08s,transform .06s}
+.key.pl{--accent:var(--pl)} .key.direct{--accent:var(--direct)} .key.pgm{--accent:var(--pgm)}
+.key::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:var(--accent);transition:height .08s,background .08s,box-shadow .08s}
+.key:active:not(.pgm):not(.listen){transform:scale(.985)}
+.key .name{font:600 22px/1 var(--display);letter-spacing:.02em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.key .type{font:500 10.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);display:flex;gap:8px;align-items:center}
+.key .type .mode{color:var(--fg-3)}
+.key .act{margin-top:auto;display:flex;align-items:center;gap:8px;min-height:22px;font-size:13.5px;color:var(--fg-2)}
+.key .act .who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.key .act.quiet{color:var(--fg-3)}
+.bars{display:inline-flex;align-items:flex-end;gap:2px;height:16px;width:22px;flex:none}
+.bars i{flex:1;background:var(--live);border-radius:1px;height:20%;transition:height .09s linear}
+.key .foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.key .hint{font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3);border:1px solid var(--line-2);border-radius:6px;padding:6px 8px}
+.key .talk{display:none;align-items:center;gap:8px;font:700 15px/1 var(--display);letter-spacing:.16em;color:#fff}
+.key .talk .bars i{background:#fff}
+/* hot (keyed) */
+.key.hot{background:var(--tally-dim);border-color:var(--tally);box-shadow:0 0 0 2px var(--tally),0 0 30px var(--tally-glow)}
+.key.hot::before{height:9px;background:var(--tally);box-shadow:0 0 16px var(--tally)}
+.key.hot .type,.key.hot .type .mode{color:#FF8C94}
+.key.hot .hint{display:none}
+.key.hot .talk{display:inline-flex}
+.key.hot .act{color:#F1B3B8}
+/* latched marker (auto/latch) */
+.key.latched .talk::after{content:"LATCHED";font:600 10px/1 var(--mono);letter-spacing:.12em;color:#FFB3B8;border:1px solid #7A2A31;border-radius:5px;padding:4px 6px;margin-left:2px}
+/* pgm */
+.key.pgm .hint{border-color:transparent;color:var(--pgm);padding-left:0}
+.key.pgm.listen{cursor:pointer}
+.key.pgm.listen .hint{border-color:var(--line-2);color:var(--fg-2)}
+.key.pgm.listen.on .hint{color:var(--pgm);border-color:var(--pgm)}
+.key.pgm.listen:not(.on){background:var(--surface)}
+.key.pgm.listen:not(.on) .name,.key.pgm.listen:not(.on) .act{color:var(--fg-3)}
+.key.pgm.listen:not(.on)::before{opacity:.35}
+/* disabled (connecting / mic off) */
+.app.offline .key,.app.micoff .key:not(.pgm){pointer-events:none;opacity:.42}
+/* levels mode */
+.key .lvl{display:none;margin-top:auto;flex-direction:column;gap:8px}
+.key .lvl .row{display:flex;justify-content:space-between;align-items:baseline;font:500 12px/1 var(--mono);color:var(--fg-2)}
+.key .lvl .row b{font-size:18px;color:var(--fg);font-weight:500}
+.app.levels .key{cursor:default;pointer-events:auto}
+.app.levels .key .act,.app.levels .key .foot{display:none}
+.app.levels .key .lvl{display:flex}
+.app.levels .key.hot{background:var(--raised);border-color:var(--line);box-shadow:none}
+.app.levels .key.hot::before{height:5px;background:var(--accent);box-shadow:none}
+.app.levels .key.hot .type{color:var(--accent)}
+
+/* range */
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:36px;background:transparent;margin:0;touch-action:pan-y}
+input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--accent,var(--fg-2)) var(--v,50%),var(--line) var(--v,50%))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;border:0;margin-top:-10px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--line)}
+input[type=range]::-moz-range-progress{height:6px;border-radius:3px;background:var(--accent,var(--fg-2))}
+input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;background:#fff;border:0}
+
+/* dock */
+.dock{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,rgba(11,13,16,0) 0,var(--bg) 22px);padding:26px 14px calc(14px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:12px}
+.mic{width:92px;height:72px;border-radius:14px;border:1px solid var(--line-2);background:var(--raised);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;flex:none}
+.mic .l{font:700 15px/1 var(--display);letter-spacing:.14em}
+.mic .s{font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--live)}
+.mic.off{background:var(--warn);border-color:var(--warn);color:var(--bg)}
+.mic.off .s{color:var(--bg)}
+.master{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;--accent:var(--fg-2)}
+.master .row{display:flex;justify-content:space-between;align-items:baseline;padding:0 2px}
+.master .row .eyebrow{color:var(--fg-2)}
+.master .row b{font:500 16px/1 var(--mono);color:var(--fg)}
+
+/* demo sheet */
+.sheet{position:absolute;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end}
+.sheet.on{display:flex}
+.sheet .card{width:100%;background:var(--surface);border-top:1px solid var(--line-2);border-radius:18px 18px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:10px}
+.sheet .card h2{margin:0 0 4px;font:600 22px/1 var(--display);letter-spacing:.02em;text-transform:uppercase}
+.sheet .btn{display:block;width:100%;text-align:left;background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:13px 14px;font-weight:500}
+.sheet .btn.quiet{background:none;text-align:center;color:var(--fg-2)}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="phone">
+
+    <!-- 1. Pack picker -->
+    <section class="screen on" id="s-pick">
+      <div class="hdr">
+        <div class="eyebrow">Comms · Stage A</div>
+        <h1>Pick your pack</h1>
+        <div class="sub">You'll hear every channel on the pack. Keys are set by the manager.</div>
+      </div>
+      <div class="scroll">
+        <div class="packs" id="packlist"></div>
+      </div>
+    </section>
+
+    <!-- 2. PIN -->
+    <section class="screen" id="s-pin">
+      <div class="pin">
+        <div class="who">
+          <div class="eyebrow">This pack needs a PIN</div>
+          <span class="tape" id="pin-name">Director</span>
+        </div>
+        <div class="dots" id="dots"><i></i><i></i><i></i><i></i></div>
+        <div class="msg" id="pin-msg"></div>
+        <div class="pad" id="pad"></div>
+      </div>
+    </section>
+
+    <!-- 3. Talk -->
+    <section class="screen" id="s-talk">
+      <div class="app" id="app">
+        <div class="top">
+          <div class="status wait" id="status"><span class="dot"></span><span id="status-t">Connecting</span></div>
+          <div class="spacer"></div>
+          <button class="chip" id="levels-btn" aria-pressed="false">Levels</button>
+          <button class="chip icon" id="menu-btn" aria-label="Menu">≡</button>
+        </div>
+        <div class="banner" id="banner">Lost the gateway. Keys are off until it's back. Reconnecting…</div>
+        <div class="scroll">
+          <div class="packbar"><span class="tape sm" id="talk-pack">Stage Manager</span><span class="hint" id="talk-hint">Hold or tap a key to talk</span></div>
+          <div class="grid" id="grid"></div>
+        </div>
+        <div class="dock">
+          <button class="mic" id="mic" aria-pressed="false"><span class="l">MIC</span><span class="s" id="mic-s">live</span></button>
+          <div class="master">
+            <div class="row"><span class="eyebrow">Master</span><b id="master-v">80</b></div>
+            <input type="range" id="master" min="0" max="100" value="80" aria-label="Master volume">
+          </div>
+        </div>
+      </div>
+      <div class="sheet" id="sheet">
+        <div class="card">
+          <h2>Prototype controls</h2>
+          <button class="btn" data-demo="talker">Someone talks on a channel</button>
+          <button class="btn" data-demo="drop">Drop the connection for 3 s</button>
+          <button class="btn" data-demo="switch">Switch pack</button>
+          <button class="btn quiet" data-demo="close">Close</button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <aside class="side">
+    <h1>Talk app<br>prototype</h1>
+    <p>Best on a phone. On desktop, use the mouse: press and hold a key, or tap it, depending on its mode.</p>
+    <div class="group">
+      <div class="eyebrow">Jump to</div>
+      <button class="btn" data-demo="switch">Pack picker</button>
+      <button class="btn" data-demo="pin">PIN entry (Director · <kbd>1234</kbd>)</button>
+      <button class="btn" data-demo="talker">Simulate a talker</button>
+      <button class="btn" data-demo="drop">Simulate a dropped connection</button>
+    </div>
+    <div class="group">
+      <div class="eyebrow">Key modes</div>
+      <p><b>HOLD</b> is PTT. <b>TAP</b> is latch. <b>TAP·HOLD</b> is auto: a quick tap latches, a hold releases when you let go.</p>
+      <p><b>LEVELS</b> swaps every key for its volume slider so you can mix without keying anything.</p>
+    </div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  const CH = {
+    prod:{name:'Production',type:'pl'},
+    cams:{name:'Cameras',type:'pl'},
+    lx:{name:'Lighting',type:'pl'},
+    dir:{name:'Director',type:'direct'},
+    sm:{name:'Stage Mgr',type:'direct'},
+    pgm:{name:'Program',type:'pgm'},
+    ann:{name:'Announce',type:'pgm'},
+  };
+  const PACKS = [
+    {id:'sm',name:'Stage Manager',pin:null,ch:[['prod','auto'],['cams','ptt'],['dir','latch'],['lx','latch'],['pgm','toggle'],['ann','always']]},
+    {id:'dir',name:'Director',pin:'1234',ch:[['prod','auto'],['cams','auto'],['sm','latch'],['pgm','toggle']]},
+    {id:'cam1',name:'Camera 1',pin:null,ch:[['cams','ptt'],['prod','ptt'],['pgm','always']]},
+    {id:'cam2',name:'Camera 2',pin:null,ch:[['cams','ptt'],['prod','ptt'],['pgm','always']]},
+    {id:'lx',name:'Lighting',pin:null,ch:[['lx','auto'],['prod','ptt'],['ann','always']]},
+    {id:'a2',name:'Audio A2',pin:null,ch:[['prod','auto'],['pgm','toggle']]},
+    {id:'foh',name:'FOH',pin:null,ch:[['prod','latch'],['ann','always']]},
+  ];
+  const HW = [{name:'Stage rack',note:'Hardware node · XLR 1/2 → Production'}];
+  const TALKERS = {prod:['Alex','Priya','Marco'],cams:['Cam 2','Marco'],lx:['Jo'],dir:['Alex'],sm:['Priya'],pgm:['Stage rack'],ann:['Stage rack']};
+  const MODE_HINT = {ptt:'hold',latch:'tap',auto:'tap · hold'};
+  const TYPE_LABEL = {pl:'Partyline',direct:'Direct',pgm:'PGM'};
+
+  const $ = s => document.querySelector(s);
+  const show = id => { document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id)); };
+  const haptic = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- picker ----------
+  const list = $('#packlist');
+  const chNames = p => p.ch.map(([c]) => CH[c].name);
+  PACKS.forEach(p => {
+    const b = document.createElement('button'); b.className = 'pack';
+    const names = chNames(p); const shown = names.slice(0,3).join(' · ') + (names.length > 3 ? ` · +${names.length-3}` : '');
+    b.innerHTML = `<div class="meta"><span class="tape">${p.name}</span><span class="chs">${shown}</span></div>` +
+      (p.pin ? `<span class="lock">PIN <svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="6" width="10" height="7" rx="1.5"/><path d="M3.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg></span>` : '') +
+      `<span class="chev">›</span>`;
+    b.addEventListener('click', () => p.pin ? openPin(p) : enter(p));
+    list.appendChild(b);
+  });
+  const sect = document.createElement('div'); sect.className = 'sect eyebrow'; sect.textContent = 'Hardware nodes · not selectable'; list.appendChild(sect);
+  HW.forEach(h => {
+    const d = document.createElement('div'); d.className = 'pack hw';
+    d.innerHTML = `<div class="meta"><span class="tape">${h.name}</span><span class="chs">${h.note}</span></div>`;
+    list.appendChild(d);
+  });
+
+  // ---------- pin ----------
+  let pinPack = null, pinBuf = '';
+  const dots = $('#dots'), pinMsg = $('#pin-msg'), pad = $('#pad');
+  ['1','2','3','4','5','6','7','8','9','back','0','⌫'].forEach(k => {
+    const b = document.createElement('button');
+    if (k === 'back') { b.textContent = 'Back'; b.className = 'ghost'; b.addEventListener('click', () => show('s-pick')); }
+    else { b.textContent = k; b.addEventListener('click', () => key(k)); }
+    pad.appendChild(b);
+  });
+  function openPin(p) { pinPack = p; pinBuf = ''; pinMsg.textContent = ''; $('#pin-name').textContent = p.name; paint(); show('s-pin'); }
+  function paint() { dots.classList.remove('err'); [...dots.children].forEach((d,i) => d.classList.toggle('f', i < pinBuf.length)); }
+  function key(k) {
+    if (k === '⌫') { pinBuf = pinBuf.slice(0,-1); pinMsg.textContent = ''; return paint(); }
+    if (pinBuf.length >= 4) return;
+    pinBuf += k; paint();
+    if (pinBuf.length === 4) {
+      if (pinBuf === pinPack.pin) { haptic(10); enter(pinPack); }
+      else { dots.classList.add('err'); pinMsg.textContent = "That PIN didn't match. Try again."; haptic([20,40,20]); setTimeout(() => { pinBuf = ''; paint(); }, 450); }
+    }
+  }
+
+  // ---------- talk ----------
+  const app = $('#app'), grid = $('#grid'), status = $('#status'), statusT = $('#status-t'), banner = $('#banner');
+  let pack = null, keys = [], connected = false, micOff = false, simTimer = null;
+
+  function setStatus(kind, text) { status.className = 'status ' + kind; statusT.textContent = text; }
+
+  function enter(p) {
+    pack = p; $('#talk-pack').textContent = p.name; micOff = false; setMic();
+    app.classList.remove('levels'); $('#levels-btn').classList.remove('on'); $('#levels-btn').setAttribute('aria-pressed','false');
+    build(); show('s-talk');
+    connected = false; app.classList.add('offline'); setStatus('wait','Connecting');
+    setTimeout(() => { connected = true; app.classList.remove('offline'); setStatus('','Connected'); }, 1100);
+    clearInterval(simTimer); simTimer = setInterval(() => { if (Math.random() < .55) simTalker(); }, 4200);
+  }
+
+  function build() {
+    grid.innerHTML = ''; keys = [];
+    pack.ch.forEach(([cid, mode]) => {
+      const ch = CH[cid]; const isPgm = ch.type === 'pgm';
+      const el = document.createElement('div');
+      el.className = `key ${ch.type}` + (isPgm && mode === 'toggle' ? ' listen on' : '');
+      el.setAttribute('role','button'); el.tabIndex = 0;
+      const modeText = isPgm ? (mode === 'toggle' ? 'toggle' : 'listen') : mode;
+      const hint = isPgm ? (mode === 'toggle' ? 'on' : 'listen') : MODE_HINT[mode];
+      el.innerHTML = `
+        <div class="name">${ch.name}</div>
+        <div class="type">${TYPE_LABEL[ch.type]} <span class="mode">${modeText}</span></div>
+        <div class="act quiet"><span class="who">Quiet</span></div>
+        <div class="foot"><span class="hint">${hint}</span><span class="talk"><span class="bars"><i></i><i></i><i></i><i></i><i></i></span>TALK</span></div>
+        <div class="lvl"><div class="row"><span>Level</span><b>${isPgm ? 70 : 80}</b></div><input type="range" min="0" max="100" value="${isPgm ? 70 : 80}" aria-label="${ch.name} level"></div>`;
+      const k = {cid, ch, mode, el, keyed:false, latched:false, pgmOn:true, downAt:0, handled:false, act:el.querySelector('.act'), talk:el.querySelector('.talk')};
+      keys.push(k);
+      wireRange(el.querySelector('input'), el.querySelector('.lvl b'));
+      if (isPgm) { if (mode === 'toggle') el.addEventListener('click', () => { if (app.classList.contains('levels')) return; k.pgmOn = !k.pgmOn; el.classList.toggle('on', k.pgmOn); el.querySelector('.hint').textContent = k.pgmOn ? 'on' : 'off'; haptic(8); }); }
+      else wireKey(k);
+      grid.appendChild(el);
+    });
+  }
+
+  function wireRange(r, out) {
+    const set = () => { r.style.setProperty('--v', r.value + '%'); out.textContent = r.value; };
+    r.addEventListener('input', set); set();
+  }
+  wireRange($('#master'), $('#master-v'));
+
+  function setKeyed(k, on) {
+    if (k.keyed === on) return;
+    k.keyed = on; k.el.classList.toggle('hot', on); if (!on) { k.latched = false; k.el.classList.remove('latched'); }
+    haptic(on ? 12 : 6);
+    if (on) meter(k.talk.querySelector('.bars'), () => k.keyed);
+  }
+
+  function wireKey(k) {
+    const el = k.el;
+    el.addEventListener('contextmenu', e => e.preventDefault());
+    el.addEventListener('pointerdown', e => {
+      if (!connected || micOff || app.classList.contains('levels')) return;
+      e.preventDefault(); el.setPointerCapture(e.pointerId);
+      k.downAt = performance.now(); k.handled = false;
+      if (k.mode === 'ptt') setKeyed(k, true);
+      else if (k.mode === 'latch') { setKeyed(k, !k.keyed); if (k.keyed) { k.latched = true; el.classList.add('latched'); } k.handled = true; }
+      else { // auto
+        if (k.keyed && k.latched) { setKeyed(k, false); k.handled = true; }
+        else setKeyed(k, true);
+      }
+    });
+    const up = e => {
+      if (k.mode === 'ptt') return setKeyed(k, false);
+      if (k.mode === 'auto' && !k.handled) {
+        const held = performance.now() - k.downAt;
+        if (held < 350) { k.latched = true; el.classList.add('latched'); }
+        else setKeyed(k, false);
+      }
+    };
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', () => setKeyed(k, false));
+    el.addEventListener('lostpointercapture', e => { if (k.mode === 'ptt') setKeyed(k, false); });
+    el.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) el.dispatchEvent(new PointerEvent('pointerdown',{pointerId:1})); } });
+    el.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') up(e); });
+  }
+
+  // animated meter: random walk while alive()
+  function meter(bars, alive) {
+    const b = [...bars.children]; let lv = b.map(() => .3);
+    const tick = () => {
+      if (!alive()) { b.forEach(i => i.style.height = '20%'); return; }
+      lv = lv.map(v => Math.max(.15, Math.min(1, v + (Math.random() - .5) * .6)));
+      b.forEach((i, n) => i.style.height = Math.round(lv[n] * 100) + '%');
+      reduced ? setTimeout(tick, 400) : setTimeout(tick, 90);
+    };
+    tick();
+  }
+
+  function simTalker(cid) {
+    const pool = keys.filter(k => !cid || k.cid === cid); if (!pool.length) return;
+    const k = pool[Math.floor(Math.random() * pool.length)];
+    if (k.talking) return;
+    const who = TALKERS[k.cid][Math.floor(Math.random() * TALKERS[k.cid].length)];
+    k.talking = true; k.act.className = 'act';
+    k.act.innerHTML = `<span class="bars"><i></i><i></i><i></i><i></i><i></i></span><span class="who">${who}</span>`;
+    meter(k.act.querySelector('.bars'), () => k.talking);
+    setTimeout(() => { k.talking = false; k.act.className = 'act quiet'; k.act.innerHTML = '<span class="who">Quiet</span>'; }, 2200 + Math.random() * 2500);
+  }
+
+  function drop() {
+    if (!pack) return;
+    connected = false; keys.forEach(k => setKeyed(k, false));
+    app.classList.add('offline'); banner.classList.add('on'); setStatus('warn','Reconnecting');
+    setTimeout(() => { connected = true; app.classList.remove('offline'); banner.classList.remove('on'); setStatus('','Connected'); }, 3000);
+  }
+
+  // mic kill
+  const mic = $('#mic');
+  function setMic() { mic.classList.toggle('off', micOff); mic.setAttribute('aria-pressed', String(micOff)); $('#mic-s').textContent = micOff ? 'off' : 'live';
+    app.classList.toggle('micoff', micOff); $('#talk-hint').textContent = micOff ? 'Mic is off. Keys won’t transmit.' : 'Hold or tap a key to talk'; }
+  mic.addEventListener('click', () => { micOff = !micOff; if (micOff) keys.forEach(k => setKeyed(k, false)); setMic(); haptic(15); });
+
+  // levels mode
+  $('#levels-btn').addEventListener('click', e => {
+    const on = !app.classList.contains('levels'); app.classList.toggle('levels', on);
+    e.currentTarget.classList.toggle('on', on); e.currentTarget.setAttribute('aria-pressed', String(on));
+    $('#talk-hint').textContent = on ? 'Set how loud each channel is for you' : (micOff ? 'Mic is off. Keys won’t transmit.' : 'Hold or tap a key to talk');
+  });
+
+  // demo controls
+  const sheet = $('#sheet');
+  $('#menu-btn').addEventListener('click', () => sheet.classList.add('on'));
+  sheet.addEventListener('click', e => { if (e.target === sheet) sheet.classList.remove('on'); });
+  document.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => {
+    const a = b.dataset.demo; sheet.classList.remove('on');
+    if (a === 'talker') { if (!pack) enter(PACKS[0]); setTimeout(() => simTalker(), pack ? 0 : 1200); }
+    if (a === 'drop') { if (!pack) enter(PACKS[0]); setTimeout(drop, pack ? 0 : 1300); }
+    if (a === 'switch') { clearInterval(simTimer); pack = null; show('s-pick'); }
+    if (a === 'pin') openPin(PACKS[1]);
+  }));
+})();
+</script>
+</body>
+</html>
