@@ -82,7 +82,7 @@ describe('hardware channels', () => {
     expect(gateway.ports.map(p => p.type)).toEqual(['input', 'output']);
     const input = gateway.ports[0], output = gateway.ports[1];
     gateway.updatePort(input.id, { ...write(input), triggers: [{ kind: 'always', functions: [{ fn: 'callToPort', to: output.id }] }] });
-    gateway.registerNode(registration); expect(gateway.ports[0].id).toBe(input.id); expect(gateway.ports[0].hardware?.trim).toBe(6); expect(router.crosspoints).toHaveLength(1);
+    const configured = router.configured; gateway.registerNode(registration); expect(router.configured).toBe(configured); expect(gateway.ports[0].id).toBe(input.id); expect(gateway.ports[0].hardware?.trim).toBe(6); expect(router.crosspoints).toHaveLength(1);
     store.flush(); const restored = new Store(path); expect(restored.config.ports[0].triggers).toHaveLength(1);
     router.emit('event', { event: 'connected', sessionId: 'node-session', packId: 'rack' });
     expect(gateway.ports.every(p => gateway.live.get(p.id)?.connected)).toBe(true);

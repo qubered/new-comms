@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { EventEmitter } from 'node:events';
 import { checkPorts, expand, functionTarget, type Port, type PortWrite, type PortLiveState, type Show, type ShowSnapshot, type ShowEvent, type Node, type NodeWrite, type V2NodeRegistration } from '@comms/protocol';
 import { HttpError } from './errors.ts';
@@ -156,7 +157,10 @@ export class Gateway extends EventEmitter {
     const channels = (dir: 'inputs' | 'outputs') => body[dir].map((name, i) => ({ channel: i + 1, inUse: false, trim: 0, ...old?.[dir].find(c => c.channel === i + 1), name }));
     const node: Node = { id: body.nodeId, name: body.name, address: body.address, lastSeen: Date.now(), inputs: channels('inputs'), outputs: channels('outputs') };
     next.nodes = [...next.nodes.filter(n => n.id !== node.id), node];
-    this.reconcileNode(next, node); this.commit(next);
+    this.reconcileNode(next, node);
+    const heartbeat = old && isDeepStrictEqual({ ...old, lastSeen: 0 }, { ...node, lastSeen: 0 }) && isDeepStrictEqual(next.ports, this.ports);
+    if (heartbeat) { this.store.config = next; this.store.save(); }
+    else this.commit(next);
     return { nodeId: node.id, ports: next.ports.filter(p => p.hardware?.nodeId === node.id) };
   }
   updateNode(id: string, raw: unknown) {
