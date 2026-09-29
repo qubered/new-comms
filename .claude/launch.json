@@ -37,6 +37,20 @@
       "env": {
         "COMMS_HTTP": "1"
       }
+    },
+    {
+      "name": "manager",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "@comms/manager"
+      ],
+      "port": 5174,
+      "env": {
+        "COMMS_HTTP": "1"
+      }
     }
   ]
 }
