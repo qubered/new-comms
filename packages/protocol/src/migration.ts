@@ -69,7 +69,11 @@ export function migrateV1(config: { name?: string; channels: Channel[]; packs: P
         if (!functions.length) continue;
         if (++number > 6) throw new Error(`Cannot migrate ${pack.name}: a station has at most six key triggers.`);
         own.input.triggers.push({ kind: 'key', key: number, mode: k.mode, functions });
-        for (const f of functions) own.input.station!.volumes[f.fn === 'callToConference' ? f.conf : f.fn === 'callToPort' ? f.to : ''] = k.volume;
+        if (channel.type === 'partyline') own.input.station!.volumes[conf] = k.volume;
+        else for (const other of config.packs.filter(other => other.id !== pack.id && other.keys.some(key => key.channelId === channel.id))) {
+          // Levels address sources heard, which are the input side of a hardware circuit.
+          own.input.station!.volumes[packPorts.get(other.id)!.input.id] = k.volume;
+        }
       }
     }
     if (pack.type === 'human') own.input.triggers.push({ kind: 'reply', mode: 'ptt', functions: [{ fn: 'reply' }] });

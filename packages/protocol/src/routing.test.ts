@@ -94,3 +94,19 @@ it('migrates party lines, PGM, direct calls, hardware trims and operator levels 
   expect(show.ports.find(p => p.id === 'rack-out1')!.hardware!.trim).toBe(-6);
   expect(JSON.stringify({channels,packs:[a,b,node]})).toBe(before);
 });
+
+it('migrates a hardware direct receive level onto its input and keeps PGM at full volume', () => {
+  const channels: Channel[] = [{ id: 'direct', name: 'Direct', type: 'direct', members: [] }, { id: 'pgm', name: 'PGM', type: 'pgm', members: [] }];
+  const packs: Pack[] = [
+    { id: 'phone', name: 'Phone', type: 'human', masterVolume: 80, keys: [{ channelId: 'direct', mode: 'ptt', volume: 37 }, { channelId: 'pgm', mode: 'ptt', volume: 0 }] },
+    { id: 'rack', name: 'Rack', type: 'hardware', masterVolume: 100, keys: [{ channelId: 'direct', mode: 'ptt', volume: 100 }, { channelId: 'pgm', mode: 'ptt', volume: 100 }] },
+  ];
+  const show = migrateV1({ channels, packs });
+  const phone = show.ports.find(p => p.id === 'phone')!;
+  expect(phone.station!.volumes).toEqual({ 'rack-in1': 37 });
+  expect(phone.station!.volumes.pgm ?? 100).toBe(100);
+  expect(expand(show.ports)).toEqual(expect.arrayContaining([
+    expect.objectContaining({ source: 'rack-in1', destination: 'phone', role: 'call' }),
+    expect.objectContaining({ source: 'pgm', destination: 'phone', level: 0, gate: 'always' }),
+  ]));
+});
