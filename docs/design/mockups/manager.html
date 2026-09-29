@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Manager — Comms prototype</title>
 <style>
-/* Layout: sidebar nav + main. Live is a packs × channels matrix. Platform font, sentence case, flat colour. */
+/* Layout: sidebar nav + main. Live = packs × channels matrix with attention + talking rails.
+   Packs and Channels = master/detail editors with a preview of the phone key. Platform font, flat colour. */
 :root{
   color-scheme:dark;
-  --bg:#121417; --surface:#1A1D21; --raised:#22262B; --line:#30353B; --line-2:#3E444C;
+  --bg:#121417; --surface:#1A1D21; --raised:#22262B; --raised-2:#2A2F35; --line:#2C3137; --line-2:#3E444C;
   --fg:#F2F2F0; --fg-2:#A8ADB4; --fg-3:#6F757D;
   --hot:#E0202F; --pl:#5B9BFF; --direct:#C48BFF; --pgm:#F0B429; --ok:#3FCB7A; --warn:#F5A524;
   --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -18,81 +19,108 @@ html,body{margin:0;min-height:100%}
 body{background:var(--bg);color:var(--fg);font:14.5px/1.45 var(--ui);-webkit-font-smoothing:antialiased}
 button,input,select{font:inherit;color:inherit}
 button{background:none;border:0;padding:0;cursor:pointer}
+button:disabled{cursor:default}
 :is(button,input,select,a,[tabindex]):focus-visible{outline:2px solid var(--pl);outline-offset:2px}
+[hidden]{display:none!important}
 .num{font-variant-numeric:tabular-nums}
-.muted{color:var(--fg-2)}
 .dim{color:var(--fg-3)}
+.muted{color:var(--fg-2)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
 .dot.off{background:var(--fg-3)} .dot.warn{background:var(--warn)} .dot.hot{background:var(--hot)}
-.sw{display:inline-block;width:3px;height:16px;border-radius:1px;vertical-align:-3px;margin-right:8px}
+.sw{display:inline-block;width:3px;height:15px;border-radius:1px;vertical-align:-2px;margin-right:8px;background:var(--line-2)}
 .sw.pl{background:var(--pl)} .sw.direct{background:var(--direct)} .sw.pgm{background:var(--pgm)}
+.badge{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:10px;background:var(--raised);font-size:12px;color:var(--fg-2)}
+.badge.hot{background:var(--hot);color:#fff}
+.badge.warn{background:#3d2d10;color:#FFC96B}
 
-.shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
-.side{border-right:1px solid var(--line);padding:18px 14px calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:18px;position:sticky;top:0;height:100vh}
-.brand{padding:0 8px;display:flex;flex-direction:column;gap:2px}
-.brand b{font-size:16px}
-.brand span{color:var(--fg-2);font-size:13.5px}
+/* shell */
+.shell{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
+.side{border-right:1px solid var(--line);padding:18px 12px calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:16px;position:sticky;top:0;height:100vh}
+.brand{padding:2px 10px 6px;display:flex;flex-direction:column}
+.brand b{font-size:15px}
+.brand span{color:var(--fg-2);font-size:13px}
 .nav{display:flex;flex-direction:column;gap:2px}
-.nav button{display:flex;justify-content:space-between;width:100%;text-align:left;padding:8px 10px;border-radius:7px;color:var(--fg-2)}
-.nav button:hover{background:var(--surface)}
+.nav button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:7px;color:var(--fg-2)}
+.nav button:hover{background:var(--surface);color:var(--fg)}
 .nav button.on{background:var(--raised);color:var(--fg)}
-.nav .n{color:var(--fg-3);font-size:13px}
-.gw{margin-top:auto;padding:12px 8px 0;border-top:1px solid var(--line);font-size:13px;color:var(--fg-2);display:flex;flex-direction:column;gap:3px}
-main{min-width:0;padding:20px 28px 60px;display:flex;flex-direction:column;gap:18px}
-.head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.head h1{margin:0;font:600 22px/1.2 var(--ui)}
-.head .sub{color:var(--fg-2);margin-top:4px;font-size:14px}
-.btn{height:34px;padding:0 12px;border-radius:7px;border:1px solid var(--line-2);background:var(--surface);display:inline-flex;align-items:center;gap:8px}
-.btn:hover{background:var(--raised)}
+.gw{margin-top:auto;padding:12px 10px 0;border-top:1px solid var(--line);font-size:13px;color:var(--fg-2);display:flex;flex-direction:column;gap:4px}
+.gw .r{display:flex;justify-content:space-between;gap:8px}
+main{min-width:0;padding:22px 28px 64px;display:flex;flex-direction:column;gap:18px}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.head h1{margin:0;font-size:22px;font-weight:600;line-height:1.2}
+.head .sub{color:var(--fg-2);margin-top:3px;font-size:14px;max-width:62ch}
+.btn{height:34px;padding:0 12px;border-radius:7px;border:1px solid var(--line-2);background:var(--surface);display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--raised)}
+.btn:disabled{opacity:.45}
 .btn.primary{background:var(--pl);border-color:var(--pl);color:#0e1116;font-weight:600}
 .btn.quiet{background:none;border-color:transparent;color:var(--fg-2)}
 .btn.danger{background:none;border-color:transparent;color:#FF7B84}
-.tab{display:none;flex-direction:column;gap:18px}
-.tab.on{display:flex}
+.tab{display:flex;flex-direction:column;gap:18px}
 
 /* live */
 .summary{font-size:14px;color:var(--fg-2)}
 .summary b{color:var(--fg);font-weight:600}
-.summary .w{color:var(--warn)}
-.live{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:28px;align-items:start}
-.matrix-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.live{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start}
+.matrix-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:9px}
 table.matrix{border-collapse:separate;border-spacing:0;min-width:100%}
 .matrix th,.matrix td{padding:0;text-align:left;vertical-align:middle}
-.matrix thead th{position:sticky;top:0;background:var(--surface);z-index:2;border-bottom:1px solid var(--line);padding:10px 10px 8px;font-weight:500;color:var(--fg-2);font-size:13.5px;white-space:nowrap}
-.matrix thead th:first-child{left:0;z-index:3;padding-left:14px}
-.matrix thead th .ty{display:block;font-size:11.5px;color:var(--fg-3);font-weight:400}
+.matrix thead th{position:sticky;top:0;background:var(--surface);z-index:2;border-bottom:1px solid var(--line);padding:9px 10px 8px;font-weight:500;color:var(--fg);font-size:13.5px;white-space:nowrap}
+.matrix thead th:first-child{left:0;z-index:3;padding-left:14px;font-weight:400;color:var(--fg-3)}
+.matrix thead th .ty{display:block;font-size:12px;color:var(--fg-3);font-weight:400;max-width:160px;overflow:hidden;text-overflow:ellipsis}
 .matrix tbody th{position:sticky;left:0;background:var(--bg);z-index:1;padding:0 14px;border-right:1px solid var(--line);white-space:nowrap;font-weight:500;border-bottom:1px solid var(--line)}
 .matrix tbody tr{height:46px}
-.matrix tbody td{border-bottom:1px solid var(--line);padding:0 6px;text-align:center;min-width:92px}
+.matrix tbody tr.group th{height:30px;background:var(--surface);color:var(--fg-3);font-weight:400;font-size:12.5px}
+.matrix tbody tr.group td{background:var(--surface);border-bottom:1px solid var(--line)}
+.matrix tbody td{border-bottom:1px solid var(--line);padding:0 5px;text-align:center;min-width:92px}
 .matrix tbody tr:last-child td,.matrix tbody tr:last-child th{border-bottom:0}
 .pk{display:flex;align-items:center;gap:9px}
+.pk button{text-align:left;color:inherit}
+.pk button:hover{text-decoration:underline}
 .pk small{display:block;color:var(--fg-3);font-size:12px;font-weight:400}
 tr.offline .pk{color:var(--fg-3)}
-.cell{display:inline-flex;align-items:center;justify-content:center;height:26px;min-width:64px;padding:0 9px;border-radius:5px;background:var(--raised);font-size:13px;color:var(--fg-2)}
-.cell.none{background:none;color:var(--line-2);min-width:0}
+.cell{display:inline-flex;align-items:center;justify-content:center;height:26px;min-width:60px;padding:0 9px;border-radius:5px;background:var(--raised);font-size:13px;color:var(--fg-2);border:1px solid transparent}
+.cell.none{background:none;color:var(--line-2);min-width:26px}
 .cell.on{background:var(--hot);color:#fff;font-weight:600}
 .cell.src{background:none;border:1px dashed var(--line-2);color:var(--fg-2)}
 .cell.muted{background:none;color:var(--fg-3);text-decoration:line-through}
 tr.offline .cell{opacity:.4}
-.legend{font-size:13px;color:var(--fg-3)}
-.rail h2{margin:0 0 8px;font:600 14px/1.3 var(--ui);color:var(--fg-2)}
-.talkers{display:flex;flex-direction:column;gap:2px;font-size:14px}
-.talker{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+.editing .cell{cursor:pointer}
+.editing .cell:hover{border-color:var(--pl)}
+.editing .cell.none{color:var(--fg-3)}
+.legend{font-size:13px;color:var(--fg-3);margin:8px 2px 0}
+.rail{display:flex;flex-direction:column;gap:22px}
+.rail h2{margin:0 0 8px;font-size:14px;font-weight:600;color:var(--fg-2);display:flex;align-items:center;gap:8px}
+.attn{display:flex;flex-direction:column;gap:2px}
+.attn .it{display:grid;grid-template-columns:8px 1fr;gap:10px;align-items:start;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.attn .it .dot{margin-top:6px}
+.attn .it small{display:block;color:var(--fg-2);font-size:13px}
+.attn .it button{color:var(--pl);font-size:13px}
+.talkers{display:flex;flex-direction:column}
+.talker{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
 .talker .c{color:var(--fg-2);font-size:13px}
 .talker .t{color:var(--fg-3);font-size:13px}
 .empty{color:var(--fg-3);font-size:13.5px}
 
-/* editors */
-.pane{display:grid;grid-template-columns:260px minmax(0,1fr);gap:28px;align-items:start}
-.list{border-top:1px solid var(--line)}
-.list input{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:7px;height:34px;padding:0 10px;margin:10px 0 6px}
-.list .item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 8px;border-radius:7px}
+/* master / detail */
+.pane{display:grid;grid-template-columns:250px minmax(0,1fr);gap:32px;align-items:start}
+.list{display:flex;flex-direction:column;gap:2px}
+.list input{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:7px;height:34px;padding:0 10px;margin-bottom:8px}
+.list .grp{padding:12px 8px 4px;color:var(--fg-3);font-size:12.5px}
+.list .item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 8px;border-radius:7px}
 .list .item:hover{background:var(--surface)}
 .list .item.on{background:var(--raised)}
 .list .item .m{flex:1;min-width:0}
 .list .item .s{display:block;font-size:12.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.editor{display:flex;flex-direction:column;gap:22px;max-width:760px}
-.editor h2{margin:0;font:600 20px/1.2 var(--ui)}
+.list .item .k{color:var(--fg-3);font-size:12.5px}
+.editor{display:flex;flex-direction:column;gap:26px;max-width:820px}
+.ed-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.ed-head .title{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
+.name-in{font-size:22px;font-weight:600;background:none;border:0;border-bottom:1px solid transparent;padding:2px 0;min-width:0;width:100%;max-width:420px}
+.name-in:hover{border-bottom-color:var(--line-2)}
+.name-in:focus{outline:0;border-bottom-color:var(--pl)}
+.status{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;color:var(--fg-2);white-space:nowrap}
+section.blk{display:flex;flex-direction:column;gap:12px}
+section.blk>h3{margin:0;font-size:14px;font-weight:600;color:var(--fg-2)}
 .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 24px}
 .field{display:flex;flex-direction:column;gap:6px;min-width:0}
 .field label{font-size:13.5px;color:var(--fg-2)}
@@ -102,19 +130,27 @@ tr.offline .cell{opacity:.4}
 .sel{-webkit-appearance:none;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--fg-3) 50%),linear-gradient(135deg,var(--fg-3) 50%,transparent 50%);background-position:calc(100% - 14px) 15px,calc(100% - 9px) 15px;background-size:5px 5px;background-repeat:no-repeat;padding-right:28px}
 .seg{display:inline-flex;background:var(--surface);border:1px solid var(--line-2);border-radius:7px;padding:2px;gap:2px}
 .seg button{height:28px;padding:0 12px;border-radius:5px;color:var(--fg-2);white-space:nowrap;font-size:13.5px}
-.seg button.on{background:var(--raised);color:var(--fg)}
+.seg button.on{background:var(--raised-2);color:var(--fg)}
 .switch{display:inline-flex;align-items:center;gap:9px;height:36px;font-size:14px}
-.switch i{width:36px;height:22px;border-radius:11px;background:var(--line-2);position:relative}
+.switch i{width:36px;height:22px;border-radius:11px;background:var(--line-2);position:relative;flex:none}
 .switch i::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .12s}
 .switch.on i{background:var(--ok)}
 .switch.on i::after{transform:translateX(14px)}
 .tbl{width:100%;border-collapse:collapse}
 .tbl th{text-align:left;font-weight:500;font-size:13px;color:var(--fg-3);padding:0 8px 8px;border-bottom:1px solid var(--line)}
 .tbl td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
-.tbl .sel{height:32px}
-.tbl .num{width:64px;height:32px}
-.tbl tr.off td:not(:first-child){opacity:.35;pointer-events:none}
-.chk{width:18px;height:18px;accent-color:var(--pl)}
+.tbl .sel{height:32px;min-width:118px}
+.tbl .num-in{width:64px;height:32px}
+.tbl .chn{white-space:nowrap}
+.tbl .chn small{display:block;color:var(--fg-3);font-size:12px;padding-left:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.rowact{white-space:nowrap;text-align:right}
+.rowact button{width:28px;height:28px;border-radius:6px;color:var(--fg-3);font-size:15px}
+.rowact button:hover:not(:disabled){background:var(--raised);color:var(--fg)}
+.rowact button:disabled{opacity:.3}
+.addrow{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.addmenu{display:flex;flex-direction:column;gap:2px;width:100%;max-width:440px;background:var(--surface);border:1px solid var(--line-2);border-radius:8px;padding:6px}
+.addmenu button{display:flex;align-items:center;text-align:left;padding:8px 10px;border-radius:6px}
+.addmenu button:hover{background:var(--raised)}
 .footer{display:flex;gap:6px;align-items:center;border-top:1px solid var(--line);padding-top:14px}
 .footer .grow{flex:1}
 .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -122,12 +158,33 @@ tr.offline .cell{opacity:.4}
 .chipx button{width:22px;height:22px;border-radius:5px;color:var(--fg-3);font-size:16px;line-height:1}
 .chipx button:hover{background:var(--raised);color:var(--fg)}
 .chipx.hw{border-style:dashed}
-.note{font-size:13.5px;color:var(--fg-2)}
-.tbl.nodes td{padding:12px 8px}
-.tbl.nodes .st{display:inline-flex;align-items:center;gap:7px}
-.tbl.nodes .st small{color:var(--fg-3);font-size:12.5px}
 
-@media (max-width:1100px){.live{grid-template-columns:1fr}}
+/* phone preview */
+.keys-wrap{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:28px;align-items:start}
+.preview{background:#0d0f12;border:1px solid var(--line-2);border-radius:18px;padding:12px 10px 14px;display:flex;flex-direction:column;gap:8px}
+.preview .pt{display:flex;justify-content:space-between;font-size:11px;color:var(--fg-2);padding:0 4px}
+.preview .pn{font-size:14px;font-weight:600;padding:0 4px}
+.preview .pg{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.pkey{position:relative;--c:var(--pl);min-height:62px;border-radius:6px;background:#22262B;padding:9px 7px 7px;overflow:hidden}
+.pkey.pl{--c:var(--pl)} .pkey.direct{--c:var(--direct)} .pkey.pgm{--c:var(--pgm)}
+.pkey::before{content:"";position:absolute;left:7px;right:7px;top:0;height:2px;background:var(--c)}
+.pkey .n{font-size:11.5px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pkey .s{font-size:9.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pkey.hot{background:var(--hot)} .pkey.hot::before{background:#fff} .pkey.hot .s{color:rgba(255,255,255,.7)}
+.preview .cap{font-size:12px;color:var(--fg-3);text-align:center;padding-top:4px}
+.preview .none{font-size:12px;color:var(--fg-3);text-align:center;padding:26px 8px}
+.keyprev{display:inline-grid;width:150px}
+
+/* nodes */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+.card .ch{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.card .ch b{font-size:16px}
+.card .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13.5px;align-items:center}
+.card .kv span:nth-child(odd){color:var(--fg-3)}
+.card .sel{height:32px}
+
+@media (max-width:1100px){.live{grid-template-columns:1fr}.keys-wrap{grid-template-columns:1fr}.preview{max-width:280px}}
 @media (max-width:900px){.pane{grid-template-columns:1fr}}
 @media (max-width:820px){
   .shell{grid-template-columns:1fr}
@@ -145,41 +202,43 @@ tr.offline .cell{opacity:.4}
   <aside class="side">
     <div class="brand"><b>Comms</b><span>Stage A</span></div>
     <nav class="nav" id="nav">
-      <button class="on" data-tab="live">Live <span class="n" id="n-live"></span></button>
-      <button data-tab="packs">Packs <span class="n">10</span></button>
-      <button data-tab="channels">Channels <span class="n">6</span></button>
-      <button data-tab="nodes">Hardware nodes <span class="n">3</span></button>
+      <button class="on" data-tab="live">Live <span id="n-live"></span></button>
+      <button data-tab="packs">Packs <span class="dim" id="n-packs"></span></button>
+      <button data-tab="channels">Channels <span class="dim" id="n-ch"></span></button>
+      <button data-tab="nodes">Hardware <span class="dim" id="n-nodes"></span></button>
     </nav>
     <div class="gw">
-      <span>Gateway 10.0.0.12</span>
-      <span>Mixer OK, 3.1 ms</span>
-      <span id="gw-online"></span>
+      <div class="r"><span>Gateway</span><span class="num">10.0.0.12</span></div>
+      <div class="r"><span>Mixer</span><span class="num">OK, 3.1 ms</span></div>
+      <div class="r"><span>Online</span><span class="num" id="gw-online"></span></div>
     </div>
   </aside>
 
   <main>
-    <section class="tab on" id="tab-live">
+    <!-- LIVE -->
+    <section class="tab" id="tab-live">
       <div class="head">
-        <div><h1>Live</h1><div class="sub" id="live-sub">Rows are packs, columns are channels. Red means keyed right now.</div></div>
+        <div><h1>Live</h1><div class="sub" id="live-sub">Packs down the side, channels across the top. A red cell is someone keyed right now. Click a pack name to open it.</div></div>
         <button class="btn" id="edit-toggle">Edit assignments</button>
       </div>
       <div class="summary" id="summary"></div>
       <div class="live">
         <div>
-          <div class="matrix-wrap"><table class="matrix" id="matrix"></table></div>
-          <p class="legend">Hold, Tap, Tap/hold are the key behaviours. Feed is a hardware node supplying the channel. Struck out means that pack has muted the feed for themselves.</p>
+          <div class="matrix-wrap" id="mwrap"><table class="matrix" id="matrix"></table></div>
+          <p class="legend" id="legend">Hold, Tap and Tap/hold are how the key behaves for that pack. Feed is a hardware node supplying the channel. Struck out means the pack has muted that feed for themselves.</p>
         </div>
         <div class="rail">
-          <h2>Talking now</h2>
-          <div class="talkers" id="talkers"></div>
+          <div><h2>Needs attention <span class="badge warn" id="attn-n" hidden></span></h2><div class="attn" id="attn"></div></div>
+          <div><h2>Talking now</h2><div class="talkers" id="talkers"></div></div>
         </div>
       </div>
     </section>
 
-    <section class="tab" id="tab-packs">
+    <!-- PACKS -->
+    <section class="tab" id="tab-packs" hidden>
       <div class="head">
-        <div><h1>Packs</h1><div class="sub">One per person or hardware node.</div></div>
-        <button class="btn primary">New pack</button>
+        <div><h1>Packs</h1><div class="sub">One pack per person or hardware node. Give it keys, in the order they'll appear on the phone.</div></div>
+        <button class="btn primary" id="new-pack">New pack</button>
       </div>
       <div class="pane">
         <div class="list" id="pack-list"></div>
@@ -187,10 +246,11 @@ tr.offline .cell{opacity:.4}
       </div>
     </section>
 
-    <section class="tab" id="tab-channels">
+    <!-- CHANNELS -->
+    <section class="tab" id="tab-channels" hidden>
       <div class="head">
-        <div><h1>Channels</h1></div>
-        <button class="btn primary">New channel</button>
+        <div><h1>Channels</h1><div class="sub">Partylines are open to everyone on them. Direct lines join two packs. PGM is a feed people only listen to.</div></div>
+        <button class="btn primary" id="new-ch">New channel</button>
       </div>
       <div class="pane">
         <div class="list" id="ch-list"></div>
@@ -198,16 +258,12 @@ tr.offline .cell{opacity:.4}
       </div>
     </section>
 
-    <section class="tab" id="tab-nodes">
+    <!-- HARDWARE -->
+    <section class="tab" id="tab-nodes" hidden>
       <div class="head">
-        <div><h1>Hardware nodes</h1><div class="sub">Boxes that bridge a physical circuit into a channel. They show up here on their own once they're pointed at this gateway.</div></div>
+        <div><h1>Hardware</h1><div class="sub">Boxes that bridge a physical circuit into a channel. Point a node at this gateway and it shows up here as a pack.</div></div>
       </div>
-      <div style="overflow-x:auto">
-        <table class="tbl nodes">
-          <thead><tr><th>Node</th><th>Status</th><th>Interface</th><th>Input</th><th>Output</th><th>Channel</th></tr></thead>
-          <tbody id="nodes"></tbody>
-        </table>
-      </div>
+      <div class="cards" id="nodes"></div>
     </section>
   </main>
 </div>
@@ -223,151 +279,274 @@ tr.offline .cell{opacity:.4}
     {id:'ann',name:'Announce',sub:'Stage rack',type:'pgm'},
   ];
   const PACKS = [
-    {id:'sm',name:'Stage Manager',type:'human',pin:null,online:true,a:{prod:'auto',cams:'ptt',lx:'latch',dir:'latch',pgm:'toggle',ann:'always'}},
-    {id:'dir',name:'Director',type:'human',pin:'1234',online:true,a:{prod:'auto',cams:'auto',dir:'latch',pgm:'toggle'}},
-    {id:'cam1',name:'Camera 1',type:'human',pin:null,online:true,a:{cams:'ptt',prod:'ptt',pgm:'always'}},
+    {id:'sm',name:'Stage Manager',type:'human',pin:null,online:true,client:'iPhone, Safari',a:{prod:'auto',cams:'ptt',dir:'latch',lx:'latch',pgm:'toggle',ann:'always'}},
+    {id:'dir',name:'Director',type:'human',pin:'1234',online:true,client:'iPad, Safari',a:{prod:'auto',cams:'auto',dir:'latch',pgm:'toggle'}},
+    {id:'cam1',name:'Camera 1',type:'human',pin:null,online:true,client:'Pixel 8, Chrome',a:{cams:'ptt',prod:'ptt',pgm:'always'}},
     {id:'cam2',name:'Camera 2',type:'human',pin:null,online:false,a:{cams:'ptt',prod:'ptt',pgm:'always'}},
-    {id:'lx',name:'Lighting',type:'human',pin:null,online:true,a:{lx:'auto',prod:'ptt',ann:'always'}},
-    {id:'a2',name:'Audio A2',type:'human',pin:null,online:true,a:{prod:'auto',pgm:'toggle'}},
-    {id:'foh',name:'FOH',type:'human',pin:null,online:true,a:{prod:'latch',ann:'always'}},
-    {id:'rack',name:'Stage rack',type:'hardware',pin:null,online:true,a:{prod:'latch'},node:{device:'Scarlett 18i20',cap:'In 1',play:'Out 1',seen:'now'}},
-    {id:'pgmb',name:'PGM bridge',type:'hardware',pin:null,online:true,a:{pgm:'source'},node:{device:'MOTU M4',cap:'In 3',play:'None',seen:'now'}},
-    {id:'truck',name:'Truck bridge',type:'hardware',pin:null,online:false,a:{ann:'source'},node:{device:'UMC404HD',cap:'In 1',play:'Out 2',seen:'14 min ago'}},
+    {id:'lx',name:'Lighting',type:'human',pin:null,online:true,client:'MacBook, Chrome',a:{lx:'auto',prod:'ptt',ann:'always'}},
+    {id:'a2',name:'Audio A2',type:'human',pin:null,online:true,client:'iPhone, Safari',a:{prod:'auto',pgm:'toggle'}},
+    {id:'foh',name:'FOH',type:'human',pin:null,online:true,client:'iPad, Safari',a:{prod:'latch',ann:'always'}},
+    {id:'rack',name:'Stage rack',type:'hardware',pin:null,online:true,a:{prod:'latch'},node:{device:'Focusrite Scarlett 18i20',cap:'In 1',play:'Out 1',seen:'now',ip:'10.0.0.31'}},
+    {id:'pgmb',name:'PGM bridge',type:'hardware',pin:null,online:true,a:{pgm:'source'},node:{device:'MOTU M4',cap:'In 3',play:'None',seen:'now',ip:'10.0.0.32'}},
+    {id:'truck',name:'Truck bridge',type:'hardware',pin:null,online:false,a:{ann:'source'},node:{device:'Behringer UMC404HD',cap:'In 1',play:'Out 2',seen:'14 min ago',ip:'10.0.0.40'}},
   ];
   const TYPE = {pl:'Partyline',direct:'Direct',pgm:'PGM'};
   const MODE = {auto:'Tap/hold',ptt:'Hold',latch:'Tap',always:'Listen',toggle:'Listen'};
   const chById = Object.fromEntries(CH.map(c => [c.id,c]));
   const $ = s => document.querySelector(s);
-
-  $('#nav').addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    document.querySelectorAll('#nav button').forEach(x => x.classList.toggle('on', x === b));
-    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab));
-  });
-
-  // live
+  const members = c => PACKS.filter(p => p.a[c.id]);
   const keyed = {rack:new Set(['prod'])};
   const pgmMuted = {a2:new Set(['pgm'])};
-  const matrix = $('#matrix');
+  const started = {};
+  let editing = false, selPack = 'sm', selCh = 'dir';
+
+  // ---------- nav ----------
+  function go(tab) {
+    document.querySelectorAll('#nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
+    document.querySelectorAll('.tab').forEach(t => t.hidden = t.id !== 'tab-' + tab);
+  }
+  $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) go(b.dataset.tab); });
+  function counts() {
+    $('#n-packs').textContent = PACKS.length; $('#n-ch').textContent = CH.length; $('#n-nodes').textContent = PACKS.filter(p => p.type === 'hardware').length;
+  }
+
+  // ---------- live ----------
   function cellFor(p, c) {
-    const m = p.a[c.id]; if (!m) return '<span class="cell none">·</span>';
-    if (m === 'source') return '<span class="cell src">Feed</span>';
-    if (c.type === 'pgm') { const mu = pgmMuted[p.id] && pgmMuted[p.id].has(c.id); return `<span class="cell ${mu ? 'muted' : ''}">${mu ? 'Off' : 'Listen'}</span>`; }
+    const m = p.a[c.id];
+    if (!m) return `<span class="cell none" data-p="${p.id}" data-c="${c.id}">${editing ? '+' : '·'}</span>`;
+    if (m === 'source') return `<span class="cell src" data-p="${p.id}" data-c="${c.id}">Feed</span>`;
+    if (c.type === 'pgm') { const mu = pgmMuted[p.id] && pgmMuted[p.id].has(c.id); return `<span class="cell ${mu ? 'muted' : ''}" data-p="${p.id}" data-c="${c.id}">${mu ? 'Off' : (m === 'toggle' ? 'Listen*' : 'Listen')}</span>`; }
     const on = keyed[p.id] && keyed[p.id].has(c.id);
-    return `<span class="cell ${on ? 'on' : ''}">${on ? 'Talking' : MODE[m]}</span>`;
+    return `<span class="cell ${on ? 'on' : ''}" data-p="${p.id}" data-c="${c.id}">${on ? 'Talking' : MODE[m]}</span>`;
+  }
+  function row(p) {
+    const meta = [p.type === 'hardware' ? 'Hardware' : (p.online ? p.client : ''), p.pin ? 'PIN' : '', p.online ? '' : 'offline'].filter(Boolean).join(' · ');
+    return `<tr class="${p.online ? '' : 'offline'}"><th><div class="pk"><span class="dot ${p.online ? '' : 'off'}"></span><button data-open="${p.id}">${p.name}<small>${meta}</small></button></div></th>${CH.map(c => `<td>${cellFor(p,c)}</td>`).join('')}</tr>`;
   }
   function renderMatrix() {
-    matrix.innerHTML = `<thead><tr><th>Pack</th>${CH.map(c => `<th><span class="sw ${c.type}"></span>${c.name}<span class="ty">${TYPE[c.type]}</span></th>`).join('')}</tr></thead>
-      <tbody>${PACKS.map(p => `<tr class="${p.online ? '' : 'offline'}"><th><div class="pk"><span class="dot ${p.online ? '' : 'off'}"></span><div>${p.name}<small>${p.type === 'hardware' ? 'Hardware node' : ''}${p.pin ? (p.type === 'hardware' ? ' · ' : '') + 'PIN' : ''}${p.online ? '' : (p.pin || p.type === 'hardware' ? ' · ' : '') + 'offline'}</small></div></div></th>${CH.map(c => `<td>${cellFor(p,c)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+    const people = PACKS.filter(p => p.type === 'human'), hw = PACKS.filter(p => p.type === 'hardware');
+    $('#matrix').innerHTML = `<thead><tr><th>Pack</th>${CH.map(c => `<th><span class="sw ${c.type}"></span>${c.name}<span class="ty">${c.sub || TYPE[c.type]}</span></th>`).join('')}</tr></thead>
+      <tbody>${people.map(row).join('')}
+      <tr class="group"><th>Hardware</th><td colspan="${CH.length}"></td></tr>
+      ${hw.map(row).join('')}</tbody>`;
+    $('#mwrap').classList.toggle('editing', editing);
   }
   function renderSummary() {
     const online = PACKS.filter(p => p.online).length, talking = Object.values(keyed).reduce((n,s) => n + s.size, 0);
-    const off = PACKS.filter(p => !p.online);
-    $('#summary').innerHTML = `<b>${online} of ${PACKS.length}</b> packs online, <b>${talking}</b> keyed.` + (off.length ? ` <span class="w">Offline: ${off.map(p => p.name + (p.node ? ` (last seen ${p.node.seen})` : '')).join(', ')}.</span>` : '');
-    $('#n-live').textContent = talking ? talking + ' talking' : ''; $('#gw-online').textContent = `${online} of ${PACKS.length} packs online`;
+    $('#summary').innerHTML = `<b>${online} of ${PACKS.length}</b> packs online. <b>${talking}</b> keyed.`;
+    $('#n-live').innerHTML = talking ? `<span class="badge hot">${talking}</span>` : ''; $('#gw-online').textContent = `${online} / ${PACKS.length}`;
   }
-  const started = {};
+  function elapsed(k) { if (!started[k]) started[k] = Date.now(); const s = Math.floor((Date.now() - started[k]) / 1000); return s < 60 ? s + 's' : Math.floor(s/60) + 'm ' + (s%60) + 's'; }
   function renderTalkers() {
     const rows = []; PACKS.forEach(p => (keyed[p.id] || []).forEach(c => rows.push({p, c: chById[c]})));
     $('#talkers').innerHTML = rows.length ? rows.map(({p,c}) => `<div class="talker"><div>${p.name}<div class="c">${c.name}${p.type === 'hardware' ? ', latched' : ''}</div></div><span class="t num">${elapsed(p.id + c.id)}</span></div>`).join('') : '<div class="empty">Nobody is keyed.</div>';
   }
-  function elapsed(k) { if (!started[k]) started[k] = Date.now(); const s = Math.floor((Date.now() - started[k]) / 1000); return s < 60 ? s + 's' : Math.floor(s/60) + 'm ' + (s%60) + 's'; }
-  function renderLive() { renderMatrix(); renderSummary(); renderTalkers(); }
-  renderLive();
-  const humans = PACKS.filter(p => p.type === 'human' && p.online);
+  function attention() {
+    const out = [];
+    PACKS.filter(p => p.type === 'hardware' && !p.online).forEach(p => {
+      const fed = Object.keys(p.a).map(c => chById[c].name).join(', ');
+      out.push({kind:'warn', t:`${p.name} is offline`, s:`Last seen ${p.node.seen}. ${fed} has no audio from it.`, act:{tab:'nodes'}});
+    });
+    PACKS.filter(p => p.type === 'human' && !Object.keys(p.a).length).forEach(p => out.push({kind:'warn', t:`${p.name} has no keys`, s:'They can pick the pack but there is nothing on it.', act:{tab:'packs', pack:p.id}}));
+    CH.filter(c => c.type === 'direct' && members(c).length !== 2).forEach(c => out.push({kind:'warn', t:`${c.name} has ${members(c).length} packs`, s:'A direct line needs exactly two.', act:{tab:'channels', ch:c.id}}));
+    CH.filter(c => c.type === 'pgm' && !members(c).some(p => p.type === 'hardware')).forEach(c => out.push({kind:'warn', t:`${c.name} has no feed`, s:'Add a hardware node to give it audio.', act:{tab:'channels', ch:c.id}}));
+    return out;
+  }
+  function renderAttention() {
+    const a = attention();
+    $('#attn-n').hidden = !a.length; $('#attn-n').textContent = a.length;
+    $('#attn').innerHTML = a.length ? a.map((x, i) => `<div class="it"><span class="dot warn"></span><div>${x.t}<small>${x.s}</small><button data-attn="${i}">Open</button></div></div>`).join('') : '<div class="empty">Nothing right now.</div>';
+    $('#attn').onclick = e => { const b = e.target.closest('[data-attn]'); if (!b) return; const x = attention()[+b.dataset.attn]; if (!x) return;
+      if (x.act.pack) { selPack = x.act.pack; renderPacks(); } if (x.act.ch) { selCh = x.act.ch; renderChannels(); } go(x.act.tab); };
+  }
+  function renderLive() { renderMatrix(); renderSummary(); renderTalkers(); renderAttention(); counts(); }
+  $('#matrix').addEventListener('click', e => {
+    const open = e.target.closest('[data-open]'); if (open) { selPack = open.dataset.open; renderPacks(); go('packs'); return; }
+    if (!editing) return;
+    const cell = e.target.closest('.cell'); if (!cell) return;
+    const p = PACKS.find(x => x.id === cell.dataset.p), c = chById[cell.dataset.c]; const m = p.a[c.id];
+    if (p.type === 'hardware') { if (m) delete p.a[c.id]; else p.a[c.id] = c.type === 'pgm' ? 'source' : 'latch'; }
+    else if (c.type === 'pgm') p.a[c.id] = !m ? 'always' : m === 'always' ? 'toggle' : undefined;
+    else p.a[c.id] = !m ? 'auto' : m === 'auto' ? 'ptt' : m === 'ptt' ? 'latch' : undefined;
+    if (!p.a[c.id]) delete p.a[c.id];
+    renderLive(); renderPacks(); renderChannels();
+  });
+  $('#edit-toggle').addEventListener('click', e => {
+    editing = !editing;
+    e.currentTarget.textContent = editing ? 'Done' : 'Edit assignments'; e.currentTarget.classList.toggle('primary', editing);
+    $('#live-sub').textContent = editing ? 'Click a cell to add that pack to the channel. Keep clicking to change how the key behaves (tap/hold, hold, tap) and then to remove it.' : 'Packs down the side, channels across the top. A red cell is someone keyed right now. Click a pack name to open it.';
+    renderMatrix();
+  });
+  const humans = () => PACKS.filter(p => p.type === 'human' && p.online);
   setInterval(() => {
-    if (Math.random() < .3) return;
-    const p = humans[Math.floor(Math.random() * humans.length)];
+    if (Math.random() < .3) return; const h = humans(); const p = h[Math.floor(Math.random() * h.length)]; if (!p) return;
     const opts = Object.keys(p.a).filter(c => chById[c].type !== 'pgm'); if (!opts.length) return;
     const c = opts[Math.floor(Math.random() * opts.length)];
     keyed[p.id] = keyed[p.id] || new Set(); if (keyed[p.id].has(c)) return;
-    keyed[p.id].add(c); delete started[p.id + c]; renderLive();
-    setTimeout(() => { keyed[p.id].delete(c); if (!keyed[p.id].size) delete keyed[p.id]; renderLive(); }, 1500 + Math.random() * 3500);
+    keyed[p.id].add(c); delete started[p.id + c]; renderLive(); refreshPreview();
+    setTimeout(() => { keyed[p.id].delete(c); if (!keyed[p.id].size) delete keyed[p.id]; renderLive(); refreshPreview(); }, 1500 + Math.random() * 3500);
   }, 2200);
   setInterval(renderTalkers, 1000);
-  $('#edit-toggle').addEventListener('click', e => {
-    const on = e.currentTarget.textContent === 'Edit assignments';
-    e.currentTarget.textContent = on ? 'Done' : 'Edit assignments';
-    e.currentTarget.classList.toggle('primary', on);
-    $('#live-sub').textContent = on ? 'Click a cell to add that pack to the channel. Click again to change the key behaviour, or remove it.' : 'Rows are packs, columns are channels. Red means keyed right now.';
-  });
 
-  // packs
-  let selPack = 'sm';
+  // ---------- phone preview ----------
+  function previewHTML(p) {
+    const ks = Object.keys(p.a);
+    return `<div class="pt"><span>● Stage A</span><span class="num">19:42</span></div><div class="pn">${p.name}</div>` +
+      (ks.length ? `<div class="pg">${ks.map(cid => { const c = chById[cid]; const on = keyed[p.id] && keyed[p.id].has(cid); return `<div class="pkey ${c.type} ${on ? 'hot' : ''}"><div class="n">${c.name}</div><div class="s">${c.sub || ''}</div></div>`; }).join('')}</div>` : '<div class="none">No keys yet</div>') +
+      `<div class="cap">What ${p.type === 'hardware' ? 'this node is bound to' : 'they see on their phone'}</div>`;
+  }
+  function refreshPreview() { const el = $('#preview'); if (el) el.innerHTML = previewHTML(PACKS.find(x => x.id === selPack)); }
+
+  // ---------- packs ----------
   function renderPackList() {
-    $('#pack-list').innerHTML = `<input placeholder="Search" aria-label="Search packs">` +
-      PACKS.map(p => `<button class="item ${p.id === selPack ? 'on' : ''}" data-id="${p.id}"><span class="dot ${p.online ? '' : 'off'}"></span><div class="m">${p.name}<span class="s">${Object.keys(p.a).map(c => chById[c].name).join(', ')}</span></div></button>`).join('');
+    const item = p => `<button class="item ${p.id === selPack ? 'on' : ''}" data-id="${p.id}"><span class="dot ${p.online ? '' : 'off'}"></span><div class="m">${p.name}<span class="s">${Object.keys(p.a).map(c => chById[c].name).join(', ') || 'No keys'}</span></div><span class="k num">${Object.keys(p.a).length}</span></button>`;
+    $('#pack-list').innerHTML = `<input placeholder="Search" aria-label="Search packs"><div class="grp">People</div>` + PACKS.filter(p => p.type === 'human').map(item).join('') + `<div class="grp">Hardware</div>` + PACKS.filter(p => p.type === 'hardware').map(item).join('');
   }
   function renderPackEditor() {
-    const p = PACKS.find(x => x.id === selPack); const hw = p.type === 'hardware';
+    const p = PACKS.find(x => x.id === selPack); if (!p) return; const hw = p.type === 'hardware';
+    const assigned = Object.keys(p.a), available = CH.filter(c => !p.a[c.id]);
+    const status = p.online ? `<span class="status"><span class="dot"></span>Online${p.client ? ', ' + p.client : ''}${hw ? ', ' + p.node.ip : ''}</span>` : `<span class="status"><span class="dot off"></span>Offline${hw ? ', last seen ' + p.node.seen : ''}</span>`;
     $('#pack-editor').innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-        <h2>${p.name}</h2>
+      <div class="ed-head">
+        <div class="title"><input class="name-in" id="pk-name" value="${p.name}" aria-label="Pack name"></div>
+        ${status}
         <div class="seg" role="group" aria-label="Type"><button class="${hw ? '' : 'on'}">Person</button><button class="${hw ? 'on' : ''}">Hardware node</button></div>
       </div>
-      <div class="fields">
-        <div class="field"><label for="pk-name">Name</label><input class="in" id="pk-name" value="${p.name}"></div>
-        <div class="field"><label>PIN</label><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="switch ${p.pin ? 'on' : ''}" aria-pressed="${!!p.pin}"><i></i><span>Ask for a PIN</span></button>${p.pin ? `<input class="in num" style="width:100px" value="${p.pin}" aria-label="PIN" inputmode="numeric">` : ''}</div>${hw ? '<div class="help">Not used for hardware nodes.</div>' : ''}</div>
-        ${hw ? `<div class="field"><label>Interface</label><input class="in" value="${p.node.device}, ${p.node.cap} in, ${p.node.play} out" readonly><div class="help">Change this under Hardware nodes.</div></div>` :
-        `<div class="field"><label for="pk-master">Starting volume</label><input class="in num" id="pk-master" value="80" inputmode="numeric" style="width:100px"></div>`}
-      </div>
-      <div>
-        <div style="overflow-x:auto"><table class="tbl">
-          <thead><tr><th style="width:30px"></th><th>Channel</th><th>Key</th><th>Level</th></tr></thead>
-          <tbody>${CH.map(c => {
-            const m = p.a[c.id]; const on = !!m; let ctl;
-            if (m === 'source') ctl = '<span class="cell src">Feed</span>';
-            else if (c.type === 'pgm') ctl = `<select class="sel" aria-label="${c.name} listen"><option ${m==='always'?'selected':''}>Always on</option><option ${m==='toggle'?'selected':''}>Pack can turn it off</option></select>`;
-            else ctl = `<select class="sel" aria-label="${c.name} key"><option ${m==='auto'?'selected':''}>Tap latches, hold talks</option><option ${m==='ptt'?'selected':''}>Hold to talk</option><option ${m==='latch'?'selected':''}>Tap on, tap off</option></select>`;
-            return `<tr class="${on ? '' : 'off'}"><td><input type="checkbox" class="chk" ${on ? 'checked' : ''} aria-label="${c.name}"></td><td><span class="sw ${c.type}"></span>${c.name} <span class="dim">${TYPE[c.type]}</span></td><td>${ctl}</td><td><input class="in num" value="${on ? (c.type==='pgm'?70:80) : ''}" aria-label="${c.name} level"></td></tr>`;
-          }).join('')}</tbody>
-        </table></div>
-      </div>
-      <div class="footer"><button class="btn primary">Save</button><button class="btn quiet">Discard</button><span class="grow"></span><button class="btn danger">Remove pack</button></div>`;
-  }
-  $('#pack-list').addEventListener('click', e => { const b = e.target.closest('.item'); if (!b) return; selPack = b.dataset.id; renderPackList(); renderPackEditor(); });
-  renderPackList(); renderPackEditor();
 
-  // channels
-  let selCh = 'dir';
-  const members = c => PACKS.filter(p => p.a[c.id]);
+      ${hw ? `<section class="blk"><h3>Interface</h3><div class="fields">
+          <div class="field"><label>Device</label><input class="in" value="${p.node.device}" readonly></div>
+          <div class="field"><label>Input</label><select class="sel"><option>${p.node.cap}</option><option>In 2</option><option>None</option></select><div class="help">What this node sends into its channel.</div></div>
+          <div class="field"><label>Output</label><select class="sel"><option>${p.node.play}</option><option>Out 2</option><option>None</option></select><div class="help">Where the channel mix comes out.</div></div>
+        </div></section>` :
+      `<section class="blk"><h3>Picking the pack</h3><div class="fields">
+          <div class="field"><label>PIN</label><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="switch ${p.pin ? 'on' : ''}" id="pin-sw" aria-pressed="${!!p.pin}"><i></i><span>Ask for a PIN</span></button>${p.pin ? `<input class="in num" style="width:100px" value="${p.pin}" aria-label="PIN" inputmode="numeric">` : ''}</div><div class="help">Without one, anyone on the network can pick this pack.</div></div>
+          <div class="field"><label for="pk-master">Starting volume</label><input class="in num" id="pk-master" value="80" inputmode="numeric" style="width:100px"><div class="help">They can change it. It's remembered per pack.</div></div>
+        </div></section>`}
+
+      <section class="blk">
+        <h3>Keys</h3>
+        <div class="keys-wrap">
+          <div>
+            ${assigned.length ? `<div style="overflow-x:auto"><table class="tbl">
+              <thead><tr><th style="width:28px">#</th><th>Channel</th><th>${hw ? 'Role' : 'Key'}</th><th>Level</th><th style="width:96px"></th></tr></thead>
+              <tbody>${assigned.map((cid, i) => {
+                const c = chById[cid], m = p.a[cid]; let ctl;
+                if (m === 'source') ctl = '<span class="cell src">Feed</span>';
+                else if (hw) ctl = '<span class="cell">Always keyed</span>';
+                else if (c.type === 'pgm') ctl = `<select class="sel" aria-label="${c.name} listen"><option ${m==='always'?'selected':''}>Always on</option><option ${m==='toggle'?'selected':''}>Can turn off</option></select>`;
+                else ctl = `<select class="sel" aria-label="${c.name} key"><option ${m==='auto'?'selected':''}>Tap/hold</option><option ${m==='ptt'?'selected':''}>Hold</option><option ${m==='latch'?'selected':''}>Tap</option></select>`;
+                return `<tr><td class="dim num">${i + 1}</td><td class="chn"><span class="sw ${c.type}"></span>${c.name}${c.sub ? `<small>${c.sub}</small>` : ''}</td><td>${ctl}</td><td>${hw ? '<span class="dim">–</span>' : `<input class="in num num-in" value="${c.type==='pgm'?70:80}" aria-label="${c.name} level">`}</td>
+                  <td class="rowact"><button data-act="up" data-c="${cid}" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>↑</button><button data-act="down" data-c="${cid}" aria-label="Move down" ${i === assigned.length - 1 ? 'disabled' : ''}>↓</button><button data-act="rm" data-c="${cid}" aria-label="Remove">×</button></td></tr>`;
+              }).join('')}</tbody></table></div>` : `<p class="empty">No keys yet. Add a channel and it appears on ${hw ? 'this node' : 'their phone'}.</p>`}
+            <div class="addrow" style="margin-top:12px">
+              <button class="btn" id="add-ch" ${available.length && !(hw && assigned.length) ? '' : 'disabled'}>Add channel</button>
+              <div class="addmenu" id="add-menu" hidden>${available.map(c => `<button data-add="${c.id}"><span class="sw ${c.type}"></span>${c.name}<span class="dim">&nbsp;${TYPE[c.type]}${c.sub ? ', ' + c.sub : ''}</span></button>`).join('')}</div>
+              ${hw && assigned.length ? '<span class="dim">A node bridges one channel.</span>' : (available.length ? '' : '<span class="dim">This pack has every channel.</span>')}
+            </div>
+          </div>
+          <div class="preview" id="preview">${previewHTML(p)}</div>
+        </div>
+      </section>
+
+      <div class="footer"><button class="btn primary">Save</button><button class="btn quiet">Discard</button><span class="grow"></span><button class="btn danger" id="rm-pack">Remove pack</button></div>`;
+  }
+  function renderPacks() { renderPackList(); renderPackEditor(); }
+  $('#pack-list').addEventListener('click', e => { const b = e.target.closest('.item'); if (!b) return; selPack = b.dataset.id; renderPacks(); });
+  $('#pack-editor').addEventListener('input', e => {
+    if (e.target.id === 'pk-name') { PACKS.find(x => x.id === selPack).name = e.target.value || 'Untitled'; renderPackList(); refreshPreview(); renderLive(); }
+  });
+  $('#pack-editor').addEventListener('click', e => {
+    const p = PACKS.find(x => x.id === selPack);
+    const add = e.target.closest('[data-add]');
+    if (add) { const c = chById[add.dataset.add]; p.a[c.id] = p.type === 'hardware' ? (c.type === 'pgm' ? 'source' : 'latch') : (c.type === 'pgm' ? 'always' : 'auto'); renderPacks(); renderLive(); renderChannels(); return; }
+    if (e.target.closest('#add-ch')) { const m = $('#add-menu'); m.hidden = !m.hidden; return; }
+    if (e.target.closest('#pin-sw')) { p.pin = p.pin ? null : '0000'; renderPacks(); renderLive(); return; }
+    if (e.target.closest('#rm-pack')) { const i = PACKS.indexOf(p); PACKS.splice(i, 1); selPack = (PACKS[i] || PACKS[i-1] || PACKS[0]).id; renderPacks(); renderLive(); renderChannels(); return; }
+    const act = e.target.closest('[data-act]'); if (!act) return;
+    const cid = act.dataset.c, ks = Object.keys(p.a), i = ks.indexOf(cid);
+    if (act.dataset.act === 'rm') ks.splice(i, 1);
+    if (act.dataset.act === 'up' && i > 0) [ks[i-1], ks[i]] = [ks[i], ks[i-1]];
+    if (act.dataset.act === 'down' && i < ks.length - 1) [ks[i+1], ks[i]] = [ks[i], ks[i+1]];
+    const next = {}; ks.forEach(k => next[k] = p.a[k]); p.a = next;
+    renderPacks(); renderLive(); renderChannels();
+  });
+  $('#new-pack').addEventListener('click', () => {
+    const id = 'p' + Date.now(); PACKS.push({id, name:'New pack', type:'human', pin:null, online:false, a:{}});
+    selPack = id; renderPacks(); renderLive(); $('#pk-name').select();
+  });
+
+  // ---------- channels ----------
   function renderChList() {
     $('#ch-list').innerHTML = `<input placeholder="Search" aria-label="Search channels">` +
-      CH.map(c => `<button class="item ${c.id === selCh ? 'on' : ''}" data-id="${c.id}"><span class="sw ${c.type}" style="margin:0"></span><div class="m">${c.name}<span class="s">${c.sub || TYPE[c.type]}, ${members(c).length} packs</span></div></button>`).join('');
+      CH.map(c => `<button class="item ${c.id === selCh ? 'on' : ''}" data-id="${c.id}"><span class="sw ${c.type}" style="margin:0"></span><div class="m">${c.name}<span class="s">${TYPE[c.type]}${c.sub ? ', ' + c.sub : ''}</span></div><span class="k num">${members(c).length}</span></button>`).join('');
   }
   function renderChEditor() {
-    const c = CH.find(x => x.id === selCh); const ms = members(c);
+    const c = CH.find(x => x.id === selCh); if (!c) return; const ms = members(c);
     const direct = c.type === 'direct', bad = direct && ms.length !== 2;
+    const feeds = ms.filter(p => p.type === 'hardware');
     $('#ch-editor').innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-        <h2>${c.name}</h2>
-        <div class="seg" role="group" aria-label="Type"><button class="${c.type==='pl'?'on':''}">Partyline</button><button class="${c.type==='direct'?'on':''}">Direct</button><button class="${c.type==='pgm'?'on':''}">PGM</button></div>
+      <div class="ed-head">
+        <div class="title"><input class="name-in" id="ch-name" value="${c.name}" aria-label="Channel name"></div>
+        <div class="seg" role="group" aria-label="Type"><button data-type="pl" class="${c.type==='pl'?'on':''}">Partyline</button><button data-type="direct" class="${c.type==='direct'?'on':''}">Direct</button><button data-type="pgm" class="${c.type==='pgm'?'on':''}">PGM</button></div>
       </div>
-      <div class="fields">
-        <div class="field"><label for="ch-name">Key heading</label><input class="in" id="ch-name" value="${c.name}">${direct ? '<div class="help">On a direct line each side’s key shows the other person’s name instead.</div>' : ''}</div>
-        <div class="field"><label for="ch-sub">Key sub text</label><input class="in" id="ch-sub" value="${c.sub || ''}" placeholder="Optional"><div class="help">Small line under the heading. Who's on it, what it's for, anything.</div></div>
-      </div>
-      <div class="field">
-        <label>Members</label>
-        <div class="chips">${ms.map(p => `<span class="chipx ${p.type==='hardware'?'hw':''}">${p.name}<button aria-label="Remove ${p.name}">×</button></span>`).join('')}<select class="sel" style="width:170px;height:32px" aria-label="Add a pack"><option>Add a pack</option>${PACKS.filter(p => !p.a[c.id]).map(p => `<option>${p.name}</option>`).join('')}</select></div>
-        <div class="help ${bad ? 'err' : ''}">${direct ? (bad ? `A direct line needs exactly two packs. This one has ${ms.length}.` : 'Direct lines join exactly two packs.') : c.type === 'pgm' ? 'Everyone here only listens. Hardware nodes in the list are the feed.' : ''}</div>
-      </div>
-      ${c.type === 'pgm' ? `<p class="note">Feed: ${ms.filter(p=>p.type==='hardware').map(p=>p.name).join(', ') || 'none yet. Add a hardware node to give this channel audio.'}</p>` : ''}
-      <div class="footer"><button class="btn primary">Save</button><button class="btn quiet">Discard</button><span class="grow"></span><button class="btn danger">Remove channel</button></div>`;
-  }
-  $('#ch-list').addEventListener('click', e => { const b = e.target.closest('.item'); if (!b) return; selCh = b.dataset.id; renderChList(); renderChEditor(); });
-  renderChList(); renderChEditor();
 
-  // nodes
-  $('#nodes').innerHTML = PACKS.filter(p => p.type === 'hardware').map(p => {
-    const ch = Object.keys(p.a)[0]; const c = chById[ch];
-    return `<tr><td><b>${p.name}</b></td>
-      <td><span class="st"><span class="dot ${p.online ? '' : 'off'}"></span>${p.online ? 'Online' : 'Offline'} ${p.online ? '' : `<small>last seen ${p.node.seen}</small>`}</span></td>
-      <td>${p.node.device}</td>
-      <td><select class="sel" style="width:110px;height:32px" aria-label="Input"><option>${p.node.cap}</option><option>In 2</option><option>None</option></select></td>
-      <td><select class="sel" style="width:110px;height:32px" aria-label="Output"><option>${p.node.play}</option><option>Out 2</option><option>None</option></select></td>
-      <td><span class="sw ${c.type}"></span>${c.name} <span class="dim">${p.a[ch] === 'source' ? 'feed' : 'latched'}</span></td></tr>`;
-  }).join('');
+      <section class="blk"><h3>On the key</h3>
+        <div class="keys-wrap" style="grid-template-columns:minmax(0,1fr) 170px">
+          <div class="fields">
+            <div class="field"><label for="ch-sub">Sub text</label><input class="in" id="ch-sub" value="${c.sub || ''}" placeholder="Optional"><div class="help">The small line under the heading. Who's on it, what it's for.${direct ? ' On a direct line each side’s heading is the other person’s name.' : ''}</div></div>
+          </div>
+          <div class="keyprev"><div class="pkey ${c.type}" style="min-height:72px" id="ch-prev"><div class="n" style="font-size:14px">${c.name}</div><div class="s" style="font-size:11px">${c.sub || ''}</div></div></div>
+        </div>
+      </section>
+
+      <section class="blk"><h3>${c.type === 'pgm' ? 'Who hears it' : 'Who’s on it'}</h3>
+        <div class="chips">${ms.map(p => `<span class="chipx ${p.type==='hardware'?'hw':''}">${p.name}${p.type === 'hardware' ? ' <span class="dim">feed</span>' : ''}<button data-rmm="${p.id}" aria-label="Remove ${p.name}">×</button></span>`).join('')}<select class="sel" id="add-m" style="width:170px;height:32px" aria-label="Add a pack"><option value="">Add a pack</option>${PACKS.filter(p => !p.a[c.id]).map(p => `<option value="${p.id}">${p.name}${p.type === 'hardware' ? ' (hardware)' : ''}</option>`).join('')}</select></div>
+        <div class="help ${bad ? 'err' : ''}" style="font-size:12.5px;color:${bad ? 'var(--warn)' : 'var(--fg-3)'}">${direct ? (bad ? `A direct line needs exactly two packs. This one has ${ms.length}.` : 'Direct lines join exactly two packs.') : c.type === 'pgm' ? (feeds.length ? `Feed from ${feeds.map(p => p.name).join(', ')}. Everyone else only listens.` : 'No feed yet. Add a hardware node to give this channel audio.') : 'Everyone here hears everyone else who is keyed.'}</div>
+      </section>
+
+      <div class="footer"><button class="btn primary">Save</button><button class="btn quiet">Discard</button><span class="grow"></span><button class="btn danger" id="rm-ch">Remove channel</button></div>`;
+  }
+  function renderChannels() { renderChList(); renderChEditor(); }
+  $('#ch-list').addEventListener('click', e => { const b = e.target.closest('.item'); if (!b) return; selCh = b.dataset.id; renderChannels(); });
+  $('#ch-editor').addEventListener('input', e => {
+    const c = CH.find(x => x.id === selCh);
+    if (e.target.id === 'ch-name') { c.name = e.target.value || 'Untitled'; $('#ch-prev .n').textContent = c.name; renderChList(); renderLive(); }
+    if (e.target.id === 'ch-sub') { c.sub = e.target.value; $('#ch-prev .s').textContent = c.sub; renderChList(); renderLive(); }
+  });
+  $('#ch-editor').addEventListener('change', e => {
+    if (e.target.id === 'add-m' && e.target.value) { const p = PACKS.find(x => x.id === e.target.value), c = CH.find(x => x.id === selCh); p.a[c.id] = p.type === 'hardware' ? (c.type === 'pgm' ? 'source' : 'latch') : (c.type === 'pgm' ? 'always' : 'auto'); renderChannels(); renderLive(); renderPacks(); }
+  });
+  $('#ch-editor').addEventListener('click', e => {
+    const c = CH.find(x => x.id === selCh);
+    const rm = e.target.closest('[data-rmm]'); if (rm) { delete PACKS.find(x => x.id === rm.dataset.rmm).a[c.id]; renderChannels(); renderLive(); renderPacks(); return; }
+    const t = e.target.closest('[data-type]'); if (t) { c.type = t.dataset.type; PACKS.forEach(p => { if (p.a[c.id]) p.a[c.id] = p.type === 'hardware' ? (c.type === 'pgm' ? 'source' : 'latch') : (c.type === 'pgm' ? 'always' : 'auto'); }); renderChannels(); renderLive(); renderPacks(); return; }
+    if (e.target.closest('#rm-ch')) { PACKS.forEach(p => delete p.a[c.id]); const i = CH.indexOf(c); CH.splice(i, 1); delete chById[c.id]; selCh = (CH[i] || CH[i-1] || CH[0]).id; renderChannels(); renderLive(); renderPacks(); }
+  });
+  $('#new-ch').addEventListener('click', () => {
+    const id = 'c' + Date.now(); const c = {id, name:'New channel', sub:'', type:'pl'}; CH.push(c); chById[id] = c;
+    selCh = id; renderChannels(); renderLive(); renderPacks(); $('#ch-name').select();
+  });
+
+  // ---------- hardware ----------
+  function renderNodes() {
+    $('#nodes').innerHTML = PACKS.filter(p => p.type === 'hardware').map(p => {
+      const ch = Object.keys(p.a)[0]; const c = ch && chById[ch];
+      return `<div class="card">
+        <div class="ch"><b>${p.name}</b><span class="status"><span class="dot ${p.online ? '' : 'off'}"></span>${p.online ? 'Online' : 'Offline, last seen ' + p.node.seen}</span></div>
+        <div class="kv">
+          <span>Device</span><span>${p.node.device}</span>
+          <span>Address</span><span class="num">${p.node.ip}</span>
+          <span>Input</span><select class="sel" aria-label="Input"><option>${p.node.cap}</option><option>In 2</option><option>None</option></select>
+          <span>Output</span><select class="sel" aria-label="Output"><option>${p.node.play}</option><option>Out 2</option><option>None</option></select>
+          <span>Channel</span><span>${c ? `<span class="sw ${c.type}"></span>${c.name} <span class="dim">${p.a[ch] === 'source' ? 'feed' : 'always keyed'}</span>` : '<span class="dim">Not assigned</span>'}</span>
+        </div>
+        <div><button class="btn" data-open-pack="${p.id}">Open pack</button></div>
+      </div>`;
+    }).join('') + `<div class="card" style="border-style:dashed;justify-content:center;color:var(--fg-3);font-size:13.5px">Nothing to pair. A node given this gateway's address registers itself and appears here.</div>`;
+  }
+  $('#nodes').addEventListener('click', e => { const b = e.target.closest('[data-open-pack]'); if (b) { selPack = b.dataset.openPack; renderPacks(); go('packs'); } });
+
+  renderLive(); renderPacks(); renderChannels(); renderNodes();
 })();
 </script>
 </body>
