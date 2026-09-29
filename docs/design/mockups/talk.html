@@ -228,7 +228,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;bac
       <button class="btn" data-demo="talker">Simulate someone talking</button>
       <button class="btn" data-demo="drop">Simulate a dropped connection</button>
     </div>
-    <p>Under each key: <b>Hold</b> is push-to-talk, <b>Tap</b> is latch, <b>Auto</b> is both (a quick tap latches, a hold lets go when you do).</p>
+    <p>Each key shows a heading and a sub text, both set in Manager. How a key behaves (hold, tap, or auto) is also set in Manager and isn't printed on the key. On this pack: Production is auto, Cameras is hold, Director and Lighting are tap.</p>
     <p><b>Levels</b> turns every key into its own volume slider. Keys don't work while you're in it.</p>
   </aside>
 </div>
@@ -236,13 +236,13 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;bac
 <script>
 (() => {
   const CH = {
-    prod:{name:'Production',type:'pl'},
-    cams:{name:'Cameras',type:'pl'},
-    lx:{name:'Lighting',type:'pl'},
-    dir:{name:'Director',type:'direct'},
-    sm:{name:'Stage Manager',type:'direct'},
-    pgm:{name:'Program',type:'pgm'},
-    ann:{name:'Announce',type:'pgm'},
+    prod:{name:'Production',sub:'SM, cams, LX, A2',type:'pl'},
+    cams:{name:'Cameras',sub:'Cam 1, Cam 2, director',type:'pl'},
+    lx:{name:'Lighting',sub:'Jo and SM',type:'pl'},
+    dir:{name:'Director',sub:'Alex',type:'direct'},
+    sm:{name:'Stage Manager',sub:'Priya',type:'direct'},
+    pgm:{name:'Program',sub:'Show mix',type:'pgm'},
+    ann:{name:'Announce',sub:'Stage rack',type:'pgm'},
   };
   const PACKS = [
     {id:'sm',name:'Stage Manager',pin:null,ch:[['prod','auto'],['cams','ptt'],['dir','latch'],['lx','latch'],['pgm','toggle'],['ann','always']]},
@@ -255,7 +255,6 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;bac
   ];
   const HW = [{name:'Stage rack',note:'Bridge on Production'},{name:'PGM bridge',note:'Feeds Program'}];
   const TALKERS = {prod:['Alex','Priya','Marco'],cams:['Cam 2','Marco'],lx:['Jo'],dir:['Alex'],sm:['Priya'],pgm:['PGM bridge'],ann:['Stage rack']};
-  const MODE = {ptt:'Hold',latch:'Tap',auto:'Auto'};
 
   const $ = s => document.querySelector(s);
   const show = id => document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
@@ -322,10 +321,9 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;bac
       const el = document.createElement('div');
       el.className = `key ${ch.type}` + (isPgm && mode === 'toggle' ? ' tgl' : '');
       el.setAttribute('role','button'); el.tabIndex = 0;
-      const sub = isPgm ? (mode === 'toggle' ? '' : 'Listen') : MODE[mode];
       el.innerHTML = `
         <div class="cap">${ch.name}</div>
-        <div class="full">${sub}</div>
+        <div class="full">${ch.sub || ''}</div>
         <div class="who"></div>
         ${isPgm && mode === 'toggle' ? '<div class="sw">Listening</div>' : ''}
         <div class="state"><span class="bars"><i></i><i></i><i></i><i></i><i></i></span><span class="stt">Talking</span></div>

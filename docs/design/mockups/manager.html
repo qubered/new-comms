@@ -217,12 +217,12 @@ tr.offline .cell{opacity:.4}
 <script>
 (() => {
   const CH = [
-    {id:'prod',name:'Production',type:'pl'},
-    {id:'cams',name:'Cameras',type:'pl'},
-    {id:'lx',name:'Lighting',type:'pl'},
-    {id:'dir',name:'SM / Director',type:'direct'},
-    {id:'pgm',name:'Program',type:'pgm'},
-    {id:'ann',name:'Announce',type:'pgm'},
+    {id:'prod',name:'Production',sub:'SM, cams, LX, A2',type:'pl'},
+    {id:'cams',name:'Cameras',sub:'Cam 1, Cam 2, director',type:'pl'},
+    {id:'lx',name:'Lighting',sub:'Jo and SM',type:'pl'},
+    {id:'dir',name:'SM / Director',sub:'',type:'direct'},
+    {id:'pgm',name:'Program',sub:'Show mix',type:'pgm'},
+    {id:'ann',name:'Announce',sub:'Stage rack',type:'pgm'},
   ];
   const PACKS = [
     {id:'sm',name:'Stage Manager',type:'human',pin:null,online:true,a:{prod:'auto',cams:'ptt',lx:'latch',dir:'latch',pgm:'toggle',ann:'always'}},
@@ -335,7 +335,7 @@ tr.offline .cell{opacity:.4}
   const members = c => PACKS.filter(p => p.a[c.id]);
   function renderChList() {
     $('#ch-list').innerHTML = `<input placeholder="Search" aria-label="Search channels">` +
-      CH.map(c => `<button class="item ${c.id === selCh ? 'on' : ''}" data-id="${c.id}"><span class="sw ${c.type}" style="margin:0"></span><div class="m">${c.name}<span class="s">${TYPE[c.type]}, ${members(c).length} packs</span></div></button>`).join('');
+      CH.map(c => `<button class="item ${c.id === selCh ? 'on' : ''}" data-id="${c.id}"><span class="sw ${c.type}" style="margin:0"></span><div class="m">${c.name}<span class="s">${c.sub || TYPE[c.type]}, ${members(c).length} packs</span></div></button>`).join('');
   }
   function renderChEditor() {
     const c = CH.find(x => x.id === selCh); const ms = members(c);
@@ -346,7 +346,8 @@ tr.offline .cell{opacity:.4}
         <div class="seg" role="group" aria-label="Type"><button class="${c.type==='pl'?'on':''}">Partyline</button><button class="${c.type==='direct'?'on':''}">Direct</button><button class="${c.type==='pgm'?'on':''}">PGM</button></div>
       </div>
       <div class="fields">
-        <div class="field"><label for="ch-name">Name</label><input class="in" id="ch-name" value="${c.name}">${direct ? '<div class="help">Each side sees the other person’s name on their key.</div>' : ''}</div>
+        <div class="field"><label for="ch-name">Key heading</label><input class="in" id="ch-name" value="${c.name}">${direct ? '<div class="help">On a direct line each side’s key shows the other person’s name instead.</div>' : ''}</div>
+        <div class="field"><label for="ch-sub">Key sub text</label><input class="in" id="ch-sub" value="${c.sub || ''}" placeholder="Optional"><div class="help">Small line under the heading. Who's on it, what it's for, anything.</div></div>
       </div>
       <div class="field">
         <label>Members</label>

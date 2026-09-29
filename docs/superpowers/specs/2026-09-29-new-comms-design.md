@@ -156,11 +156,16 @@ PackLiveState {
 ```
 Channel {
   id: string
-  name: string
+  name: string        // key heading, shown large on the Talk app key
+  subText?: string    // optional small line under the heading (who's on it, what it's for)
   type: "partyline" | "direct" | "pgm"
   members: string[]   // pack ids; UI enforces exactly 2 for "direct"
 }
 ```
+
+The Talk app key shows only `name` and `subText`. The key's behaviour
+(`mode`, see §5) is configured per pack in the Manager and is **not**
+printed on the key.
 
 - **partyline**: standing multi-way conference. All currently-keyed members
   hear an N-1 mix of each other.
