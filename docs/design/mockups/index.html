@@ -1,143 +1,82 @@
 <title>Comms Mockups</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: a short board. Two doors (Talk, Manager), then how to try them, then the design decisions and what they add to the spec. */
+/* Layout: a short handoff note. Links to the two prototypes, how to try them, what they add to the spec. */
 :root{
   color-scheme:dark;
-  --bg:#0B0D10; --surface:#13161B; --raised:#1B1F26; --line:#2A3039; --line-2:#3B4350;
-  --fg:#ECEEF1; --fg-2:#A3ABB7; --fg-3:#6B7480;
-  --tally:#FF2E3B; --pl:#4A93FF; --direct:#B98BFF; --pgm:#F5C542; --live:#3DDC84; --warn:#FFA033;
-  --tape:#F1EDE3; --tape-ink:#121417;
-  --display:'Barlow Condensed',"Arial Narrow",Arial,sans-serif;
-  --body:'Barlow',system-ui,-apple-system,Segoe UI,sans-serif;
-  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --bg:#121417; --surface:#1A1D21; --line:#30353B; --fg:#F2F2F0; --fg-2:#A8ADB4; --fg-3:#6F757D;
+  --hot:#E0202F; --pl:#5B9BFF; --direct:#C48BFF; --pgm:#F0B429;
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 var(--body);-webkit-font-smoothing:antialiased}
-.wrap{max-width:960px;margin:0 auto;padding-block:40px 80px;padding-inline:20px;display:flex;flex-direction:column;gap:40px}
-.eyebrow{font:600 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3)}
-h1{margin:10px 0 0;font:600 clamp(40px,7vw,64px)/.95 var(--display);letter-spacing:.01em;text-transform:uppercase;text-wrap:balance}
-h2{margin:0 0 14px;font:600 24px/1 var(--display);letter-spacing:.03em;text-transform:uppercase}
-p{margin:0;color:var(--fg-2);max-width:62ch}
-a{color:var(--fg)}
-.tape{display:inline-block;background:var(--tape);color:var(--tape-ink);font:700 14px/1 var(--display);letter-spacing:.07em;text-transform:uppercase;padding:6px 9px 5px;border-radius:2px}
-.doors{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-.door{display:flex;flex-direction:column;gap:10px;padding:22px 22px 20px;background:var(--surface);border:1px solid var(--line);border-radius:16px;text-decoration:none;position:relative;overflow:hidden;min-width:0}
-.door::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:var(--acc)}
-.door:hover{border-color:var(--line-2)}
-.door .t{font:600 30px/1 var(--display);letter-spacing:.02em;text-transform:uppercase}
-.door .d{color:var(--fg-2);font-size:15px}
-.door .go{margin-top:6px;font:600 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--fg)}
-.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px 40px}
-ul{margin:0;padding-left:18px;color:var(--fg-2);display:flex;flex-direction:column;gap:6px}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 var(--ui);-webkit-font-smoothing:antialiased}
+.wrap{max-width:680px;margin:0 auto;padding-block:48px 80px;padding-inline:20px;display:flex;flex-direction:column;gap:36px}
+h1{margin:0 0 6px;font-size:26px;font-weight:600}
+h2{margin:0 0 10px;font-size:17px;font-weight:600}
+p{margin:0;color:var(--fg-2)}
+a{color:var(--pl)}
+.links{display:flex;flex-direction:column;gap:10px}
+.link{display:block;padding:16px 18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--fg)}
+.link:hover{border-color:var(--fg-3)}
+.link b{display:block;font-size:17px;margin-bottom:3px}
+.link span{color:var(--fg-2);font-size:15px}
+ul{margin:0;padding-left:20px;color:var(--fg-2);display:flex;flex-direction:column;gap:7px}
 li b{color:var(--fg);font-weight:600}
-kbd{font-family:var(--mono);font-size:13px;background:var(--raised);border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--fg)}
-.swatches{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
-.sw{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
-.sw i{display:block;height:34px;border-radius:6px}
-.sw .n{font-weight:600;font-size:14px}
-.sw .h{font:500 12px/1 var(--mono);color:var(--fg-3)}
-.spec{border:1px solid var(--line);border-radius:14px;overflow:hidden}
-.spec .row{display:grid;grid-template-columns:150px 1fr;gap:16px;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--surface)}
-.spec .row:last-child{border-bottom:0}
-.spec .k{font:600 12px/1.5 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
-.spec .v{color:var(--fg-2);min-width:0}
-.spec .v b{color:var(--fg);font-weight:600}
-@media (max-width:560px){.spec .row{grid-template-columns:1fr;gap:4px}}
+kbd{font-family:ui-monospace,Menlo,monospace;font-size:14px;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:0 6px;color:var(--fg)}
+.small{font-size:14px;color:var(--fg-3)}
 </style>
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">new-comms · design mockups · 29 Sep 2026</div>
-    <h1>Two screens,<br>one comms system</h1>
-    <p style="margin-top:14px">Interactive mockups for the Talk app (what a crew member holds) and the Manager app (what the show's comms person runs). Everything in them is example data. Open Talk on your phone; the keys behave like the real thing.</p>
+    <h1>Comms mockups</h1>
+    <p>Two clickable prototypes for the new comms system. Talk is what a crew member holds; Manager is what the comms person runs. All the names and channels are made up.</p>
   </header>
 
-  <section class="doors">
-    <a class="door" href="talk.html" style="--acc:var(--tally)">
-      <span class="tape">Talk</span>
-      <span class="t">Beltpack in a browser</span>
-      <span class="d">Pick a pack, key channels with hold, tap or auto, mix your own levels, kill your mic. Best on a phone.</span>
-      <span class="go">Open Talk →</span>
-    </a>
-    <a class="door" href="manager.html" style="--acc:var(--pl)">
-      <span class="tape">Manager</span>
-      <span class="t">Matrix and setup</span>
-      <span class="d">Live key matrix of every pack and channel, pack and channel editors, hardware nodes. Best on a laptop.</span>
-      <span class="go">Open Manager →</span>
-    </a>
-  </section>
+  <div class="links">
+    <a class="link" href="talk.html"><b>Talk</b><span>The beltpack. Open this one on your phone.</span></a>
+    <a class="link" href="manager.html"><b>Manager</b><span>Live matrix, packs, channels, hardware nodes. Open on a laptop.</span></a>
+  </div>
 
-  <section class="cols">
-    <div>
-      <h2>Try in Talk</h2>
-      <ul>
-        <li>Pick <b>Stage Manager</b>. <b>Director</b> asks for a PIN: <kbd>1234</kbd>.</li>
-        <li><b>Production</b> is Auto: tap it and it latches, hold it and it releases when you let go.</li>
-        <li><b>Cameras</b> is PTT: hold to talk. <b>Director</b> is Latch: tap on, tap off.</li>
-        <li><b>Program</b> is a PGM feed you can switch off for yourself. <b>Announce</b> is always on.</li>
-        <li><b>Levels</b> swaps every key for its slider. Nothing can key while you mix.</li>
-        <li><b>Mic</b> kills your mic everywhere and drops any latched key.</li>
-        <li>Menu <kbd>≡</kbd> simulates a talker or a dropped connection.</li>
-      </ul>
-    </div>
-    <div>
-      <h2>Try in Manager</h2>
-      <ul>
-        <li><b>Live</b> is a matrix: rows are packs, columns are channels. Red cells are keyed right now. It updates on its own.</li>
-        <li><b>Packs</b> edits one pack: PIN, channel assignment, and the key behavior for each channel.</li>
-        <li><b>Channels</b> shows the Direct-line rule (exactly two packs) and the PGM feed rule (a hardware node is the source).</li>
-        <li><b>Hardware nodes</b> lists bridges as they register. Nothing to pair.</li>
-      </ul>
-    </div>
+  <section>
+    <h2>Things to try in Talk</h2>
+    <ul>
+      <li>Pick <b>Stage Manager</b>. <b>Director</b> asks for a PIN, it's <kbd>1234</kbd>.</li>
+      <li><b>Production</b> is auto: tap it and it latches, hold it and it lets go when you do. <b>Cameras</b> is hold-to-talk. <b>Director</b> is tap on, tap off.</li>
+      <li><b>Program</b> is a feed you can turn off for yourself. <b>Announce</b> is always on.</li>
+      <li><b>Levels</b> turns each key into its volume slider. You can't key anything while you're in there.</li>
+      <li><b>Mic</b> at the bottom kills your mic everywhere and drops anything latched.</li>
+      <li>The gear menu fakes someone talking, or a dropped connection.</li>
+    </ul>
   </section>
 
   <section>
-    <h2>Design decisions</h2>
-    <div class="cols">
-      <div>
-        <ul>
-          <li><b>Keys look like keys.</b> Each channel is a backlit tile with a tally strip along the top in its channel color. Keyed turns the whole key red and shows your own mic level. Red means one thing only: your mic is hot.</li>
-          <li><b>Who's talking is on the key.</b> Every real intercom shows audio presence per channel (Unity, Green-GO). The tile shows the talker's name and a green level so you know a channel is live without hearing it first.</li>
-          <li><b>Mixing is a separate mode.</b> Agent-IC guards against accidental keying with swipe-to-latch. Here, Levels replaces keys with sliders, so there is no way to key a channel while adjusting it.</li>
-          <li><b>Pack labels are tape.</b> Packs are named on off-white label strips, the way every beltpack on a rack is labeled in gaffer tape. It's the one decorative move, and it doubles as the "you are this pack" marker.</li>
-        </ul>
-      </div>
-      <div>
-        <ul>
-          <li><b>The Manager opens on a matrix.</b> Riedel Artist, Eclipse and every serious intercom frame are configured as a crosspoint grid. Packs × channels shows assignment and live state in one view, and edit mode makes the same grid the assignment tool.</li>
-          <li><b>Type is condensed and industrial.</b> A condensed grotesk for key labels (reads like panel engraving), a plain grotesk for everything else, a monospace for levels, modes and IDs.</li>
-          <li><b>Dark by design, not by default.</b> Backstage, in a truck, at FOH. Single theme, high contrast, colors reserved for meaning.</li>
-        </ul>
-      </div>
-    </div>
+    <h2>Things to try in Manager</h2>
+    <ul>
+      <li><b>Live</b> is a grid of packs against channels. Red cells are keyed. It ticks over on its own.</li>
+      <li><b>Packs</b> edits one pack: PIN, which channels it has, and how each key behaves.</li>
+      <li><b>Channels</b> shows the direct-line rule (exactly two packs) and where a PGM feed comes from.</li>
+      <li><b>Hardware nodes</b> lists the bridges. There's nothing to pair; they show up when they connect.</li>
+    </ul>
   </section>
 
   <section>
-    <h2>Palette</h2>
-    <div class="swatches">
-      <div class="sw"><i style="background:var(--tally)"></i><span class="n">Tally</span><span class="h">#FF2E3B · keyed</span></div>
-      <div class="sw"><i style="background:var(--pl)"></i><span class="n">Partyline</span><span class="h">#4A93FF</span></div>
-      <div class="sw"><i style="background:var(--direct)"></i><span class="n">Direct</span><span class="h">#B98BFF</span></div>
-      <div class="sw"><i style="background:var(--pgm)"></i><span class="n">PGM</span><span class="h">#F5C542</span></div>
-      <div class="sw"><i style="background:var(--live)"></i><span class="n">Live</span><span class="h">#3DDC84 · audio, online</span></div>
-      <div class="sw"><i style="background:var(--warn)"></i><span class="n">Warn</span><span class="h">#FFA033 · reconnecting, mic off</span></div>
-      <div class="sw"><i style="background:var(--tape)"></i><span class="n">Tape</span><span class="h">#F1EDE3 · pack labels</span></div>
-      <div class="sw"><i style="background:var(--raised);border:1px solid var(--line-2)"></i><span class="n">Surface</span><span class="h">#0B0D10 → #1B1F26</span></div>
-    </div>
+    <h2>Where the look comes from</h2>
+    <p>The keys are meant to feel like the keys on a Bolero or a Clear-Com pack: a thin colour strip for the channel type, and the whole key going red when your mic is hot. Red is used for nothing else. Pack names are on tape, because that's how packs get labelled on a rack. Everything else is plain: the phone's own font, sentence case, no decoration.</p>
+    <p style="margin-top:10px">Borrowed from real products: per-channel "someone's talking" indication (Unity, Green-GO), a separate mode for adjusting levels so you can't key a channel by accident (Agent-IC does this with swipe-to-latch), a global mic kill (every soft panel has one), and the matrix view (Riedel Artist, Clear-Com Eclipse).</p>
   </section>
 
   <section>
-    <h2>What this adds to the spec</h2>
-    <p style="margin-bottom:14px">Things the mockups needed that the design spec doesn't say yet. Each one is small; none changes the architecture.</p>
-    <div class="spec">
-      <div class="row"><div class="k">Mic kill</div><div class="v">A pack-wide <b>mic off</b> that drops every keyed channel and blocks keying until turned back on. Every soft panel has one. One extra boolean in the pack's live state.</div></div>
-      <div class="row"><div class="k">Talker on key</div><div class="v">The Talk app shows <b>who is keyed on each channel</b>. Already available from the SSE keyed state; just needs the pack name resolved client-side.</div></div>
-      <div class="row"><div class="k">Levels mode</div><div class="v">Per-channel volume is edited in a <b>separate Levels mode</b>, not from a control inside the key. Prevents accidental keying while mixing.</div></div>
-      <div class="row"><div class="k">Direct names</div><div class="v">A Direct channel has one name in the Manager, but each side's key shows <b>the other person's pack name</b>.</div></div>
-      <div class="row"><div class="k">Connecting state</div><div class="v">Keys are <b>disabled while connecting or reconnecting</b>, and any latched key drops on connection loss. A visible banner says why keys are off.</div></div>
-      <div class="row"><div class="k">Hardware in picker</div><div class="v">Hardware packs are listed on the picker but <b>not selectable</b>, so people can see the bridges exist without being able to become one.</div></div>
-      <div class="row"><div class="k">Matrix edit</div><div class="v">The Manager's Live matrix doubles as the <b>assignment editor</b> (click a cell to assign and cycle key behavior). The Packs editor stays for PIN, names and levels.</div></div>
-    </div>
+    <h2>Things this adds to the spec</h2>
+    <p style="margin-bottom:10px">None of these change the architecture. Need a yes or no on each.</p>
+    <ul>
+      <li><b>Mic kill.</b> One pack-wide mic off that drops every keyed channel. One extra boolean in the pack's live state.</li>
+      <li><b>Who's talking, on the key.</b> The Talk app shows the name of whoever is keyed on each channel. Comes straight from the SSE state.</li>
+      <li><b>Levels is its own mode.</b> Per-channel volume isn't a control inside the key.</li>
+      <li><b>Direct lines show the other person's name.</b> One channel in Manager, two different key labels.</li>
+      <li><b>Keys go off while reconnecting.</b> Latched keys drop on connection loss. A short banner says why.</li>
+      <li><b>Hardware packs are listed but not pickable</b> on the Talk picker.</li>
+      <li><b>The Live matrix is also the assignment editor.</b> Click a cell to assign. Packs stays for PINs, names and levels.</li>
+    </ul>
   </section>
+
+  <p class="small">Source: docs/design/mockups in the new-comms repo.</p>
 </div>
